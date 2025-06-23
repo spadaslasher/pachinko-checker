@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>点検結果報告アプリ</title>
+  <script type="module">
+    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/esm/index.min.js';
+
+    let inspector = "";
+    let selectedDeviceId = null;
+
+    window.startScan = async (name) => {
+      inspector = name;
+      document.getElementById("staff-selection").style.display = "none";
+      document.getElementById("scanner").style.display = "block";
+
+      const codeReader = new BrowserMultiFormatReader();
+      const videoElement = document.getElementById('video');
+
+      try {
+        const devices = await codeReader.listVideoInputDevices();
+        selectedDeviceId = devices[0].deviceId;
+
+        codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err) => {
+          if (result) {
+            const serial = encodeURIComponent(result.getText());
+            const name = encodeURIComponent(inspector);
+            const url = `https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform?usp=pp_url&entry.797900650=${serial}&entry.983313981=${name}`;
+            window.open(url, '_blank');
+            codeReader.reset();
+            document.getElementById("scanned-serial").textContent = `製造番号：${result.getText()}`;
+            document.getElementById("status").textContent = "QRコードを読み取りました。フォームを開いています…";
+          }
+        });
+      } catch (err) {
+        document.getElementById("status").textContent = "カメラにアクセスできませんでした。";
+      }
+    };
+  </script>
+  <style>
+    body { font-family: sans-serif; background: #f2f2f2; text-align: center; padding: 1rem; }
+    h1 { color: #333; }
+    button { margin: 0.5rem; padding: 1rem 2rem; font-size: 1.2rem; border: none; border-radius: 8px; background: #007bff; color: white; cursor: pointer; }
+    video { width: 100%; max-width: 400px; margin-top: 1rem; }
+    #status { margin-top: 1rem; color: red; }
+    #scanned-serial { margin-top: 1rem; color: green; font-size: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>点検者を選んで開始</h1>
+  <div id="staff-selection">
+    <button onclick="startScan('羽染')">羽染</button>
+    <button onclick="startScan('梅原')">梅原</button>
+    <button onclick="startScan('明田川')">明田川</button>
+    <button onclick="startScan('山口')">山口</button>
+    <button onclick="startScan('佐藤')">佐藤</button>
+  </div>
+
+  <div id="scanner" style="display:none;">
+    <video id="video" autoplay></video>
+    <p id="status">QRコードをかざしてください…</p>
+    <p id="scanned-serial"></p>
+  </div>
+</body>
+</html>
