@@ -1,99 +1,211 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>点検結果報告アプリ</title>
+  <title>点検結果報告アプリ（年コード自動判定・統一遷移）</title>
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    body{font-family:sans-serif;background:#f2f2f2;text-align:center;padding:1rem}
-    button{margin:0.4rem;padding:0.8rem 1.6rem;font-size:1.1rem;border:none;border-radius:8px;background:#007bff;color:#fff}
-    video{width:100%;max-width:400px;margin-top:1rem}
-    #status{margin-top:0.8rem;color:red}
-    #top{display:block}#scanner{display:none}
-    #toggle-light{display:none;margin-bottom:0.4rem}
+    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;text-align:center;padding:16px}
+    h1{margin:8px 0 12px;color:#222}
+    .btn{margin:6px;padding:10px 16px;font-size:16px;border:none;border-radius:10px;background:var(--brand);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+    .btn:active{transform:translateY(1px)}
+    .btn.sub{background:#6c757d}
+    .btn.ok{background:var(--ok)}
+    .card{max-width:480px;margin:8px auto;background:#fff;border-radius:12px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:left}
+    video{width:100%;max-width:480px;border-radius:10px;background:#000}
+    #status{margin-top:8px;color:#c0392b}
+    #serial{margin-top:6px;color:var(--ok);font-weight:600}
+    #top{display:block}
+    #scanner{display:none}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
   </style>
 </head>
 <body>
- <div id="top">
-  <h1>点検者を選択</h1>
-  <button onclick="startScan('羽染')">羽染</button>
-  <button onclick="startScan('梅原')">梅原</button>
-  <button onclick="startScan('明田川')">明田川</button>
-  <button onclick="startScan('山口')">山口</button>
-  <button onclick="startScan('佐藤')">佐藤</button>
-  <button onclick="startScan('髙橋')">髙橋</button>
- </div>
+  <div id="top">
+    <h1>点検者を選択</h1>
+    <div class="card" style="text-align:center">
+      <button class="btn" onclick="startScan('羽染')">羽染</button>
+      <button class="btn" onclick="startScan('梅原')">梅原</button>
+      <button class="btn" onclick="startScan('明田川')">明田川</button>
+      <button class="btn" onclick="startScan('山口')">山口</button>
+      <button class="btn" onclick="startScan('佐藤')">佐藤</button>
+      <button class="btn" onclick="startScan('髙橋')">髙橋</button>
 
- <div id="scanner">
-   <button id="toggle-light" onclick="toggleTorch()">🔦ライトON/OFF</button><br>
-   <video id="video" autoplay></video><br>
-   <button onclick="manualEntry()">QR読めない→手入力</button>
-   <button onclick="showHistory()">履歴を見る</button>
-   <p id="status">QRコードをかざしてください…</p>
-   <p id="serial"></p>
- </div>
+      <div style="margin-top:10px">
+        <button class="btn sub" onclick="showHistory()">履歴を見る</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="scanner">
+    <div class="card">
+      <div class="toolbar">
+        <button id="btnTorch" class="btn sub" style="display:none" onclick="onTorchClick()">🔦 ライト</button>
+        <button class="btn sub" onclick="manualEntry()">QR読めない→手入力</button>
+      </div>
+
+      <video id="video" autoplay playsinline></video>
+      <div id="status">QRコードをかざしてください…</div>
+      <div id="serial"></div>
+    </div>
+  </div>
 
 <script>
-let inspector='',reader,streamTrack,torchOn=false;
+/** ====== 設定 ====== */
+const FORM_URL_BASE = "https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform";
+const ENTRY_SERIAL   = "entry.797900650"; // 製造番号
+const ENTRY_INSPECT  = "entry.983313981"; // 点検者
+
+/** ====== 変数 ====== */
+let inspector='', codeReader;
+let streamTrack=null;             // 現在のカメラトラック（torch制御に使用）
+let torchSupported=false;         // この端末/カメラでネイティブtorchが使えるか
+
+/** ====== 年コード → 文字（J,K,L,M,N,…Z, A…） ======
+ * 基準: 2022年→'J'。以降はアルファベット順に進む（Zの次はA）。
+ * 例: 2022→J, 2023→K, 2024→L, 2025→M, 2026→N
+ */
+function yearToLetterFromYY(yyStr){
+  const yy = parseInt(yyStr, 10);
+  if (isNaN(yy)) return '?';
+  const baseYear = 22;                 // '22' (＝2022)
+  const baseCharCode = 'J'.charCodeAt(0);
+  let offset = (yy - baseYear) % 26;
+  if (offset < 0) offset += 26;
+  let code = baseCharCode + offset;
+  // Z(90) の次は A(65) にループさせる
+  if (code > 'Z'.charCodeAt(0)) {
+    code = 'A'.charCodeAt(0) + (code - 'Z'.charCodeAt(0) - 1);
+  }
+  return String.fromCharCode(code);
+}
+
+/** ====== スキャン開始 ====== */
 function startScan(name){
-  inspector=name;
+  inspector = name;
   document.getElementById('top').style.display='none';
   document.getElementById('scanner').style.display='block';
-  reader=new ZXing.BrowserMultiFormatReader();
-  const vid=document.getElementById('video');
-  reader.decodeOnceFromConstraints({video:{facingMode:'environment'}},vid)
-   .then(res=>{
-      const raw=res.getText();
-      const formatted=parseSerial(raw);
-      document.getElementById('serial').textContent='読み取り:'+formatted;
-      saveHistory(formatted);
-      openForm(formatted);
-      reader.reset();
-      if(streamTrack)streamTrack.stop();
-      setTimeout(()=>location.reload(),2000);
-   })
-   .catch(err=>{document.getElementById('status').textContent='エラー:'+err});
-  // torch button show?
-  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
-    .then(s=>{streamTrack=s.getVideoTracks()[0];
-      const cap=streamTrack.getCapabilities();
-      if(cap.torch!==undefined){document.getElementById('toggle-light').style.display='inline-block';}
-      streamTrack.stop();
-    });
+
+  codeReader = new ZXing.BrowserMultiFormatReader();
+  const vid = document.getElementById('video');
+
+  // ZXing にストリームを開かせる（背面カメラ指定）
+  codeReader.decodeOnceFromConstraints({ video:{ facingMode:'environment' } }, vid)
+  .then(res => {
+    const raw = res.getText();
+    const formatted = parseSerial(raw); // 変換
+    document.getElementById('serial').textContent = '読み取り: ' + formatted;
+    saveHistory(formatted);
+    openForm(formatted);               // 統一：別タブで開く
+    cleanupStream();
+    setTimeout(() => location.reload(), 2000);
+  })
+  .catch(err => {
+    document.getElementById('status').textContent = 'エラー: ' + err;
+  });
+
+  // 少し待って video にストリームが乗った後に torch 可否を判定
+  setTimeout(() => {
+    try{
+      const v = document.getElementById('video');
+      const track = v.srcObject && v.srcObject.getVideoTracks ? v.srcObject.getVideoTracks()[0] : null;
+      if(track){
+        streamTrack = track;
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        torchSupported = !!caps.torch; // iOSは未対応のためfalseのままになる
+        const btn = document.getElementById('btnTorch');
+        btn.style.display = torchSupported ? 'inline-block' : 'none';
+      }
+    }catch(e){ /* ignore */ }
+  }, 600);
 }
-function toggleTorch(){
-  if(!streamTrack)return;
-  torchOn=!torchOn;
-  streamTrack.applyConstraints({advanced:[{torch:torchOn}]});
-}
-function parseSerial(t){
-  if(!t||t.length<12)return t;
-  if(t.startsWith('P')||t.startsWith('M')){
-     const mk=t.slice(2,4);const num=t.slice(-6);return `${mk}-L ${num}`;
-  }
-  if(/^[A-Z0-9]{2}[A-Z]{2}\d{9}$/.test(t)){
-     const mk=t.slice(2,4);const prefix=t[0];const num=t.slice(-6);return `${mk}-K ${prefix}${num}`;
-  }
-  return t;
-}
+
+/** ====== フォームを開く（統一して別タブ） ====== */
 function openForm(serial){
-  const url=`https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform?usp=pp_url&entry.797900650=${encodeURIComponent(serial)}&entry.983313981=${encodeURIComponent(inspector)}`;
-  const w=window.open('','_blank');if(w)w.location.href=url;
+  const url = `${FORM_URL_BASE}?usp=pp_url&${ENTRY_SERIAL}=${encodeURIComponent(serial)}&${ENTRY_INSPECT}=${encodeURIComponent(inspector)}`;
+  const win = window.open(url, '_blank');
+  if(!win){
+    alert('ポップアップがブロックされています。ブラウザ設定で許可してください。');
+  }
 }
+
+/** ====== ライト（対応端末のみ） ====== */
+function onTorchClick(){
+  if(!torchSupported || !streamTrack) return;
+  try{
+    const settings = streamTrack.getSettings ? streamTrack.getSettings() : {};
+    const isOn = settings.torch === true;
+    streamTrack.applyConstraints({ advanced:[{ torch: !isOn }] }).catch(()=>{});
+  }catch(e){ /* ignore */ }
+}
+
+/** ====== 手入力モード ====== */
 function manualEntry(){
-  const url=`https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform?usp=pp_url&entry.983313981=${encodeURIComponent(inspector)}`;
-  window.open(url,'_blank');
+  const url = `${FORM_URL_BASE}?usp=pp_url&${ENTRY_INSPECT}=${encodeURIComponent(inspector)}`;
+  const win = window.open(url,'_blank');
+  if(!win){ alert('ポップアップがブロックされています。ブラウザ設定で許可してください。'); }
 }
+
+/** ====== 履歴 ====== */
 function saveHistory(serial){
-  const h=JSON.parse(localStorage.getItem('history')||'[]');
-  h.unshift({time:new Date().toLocaleString(),serial,inspector});
-  localStorage.setItem('history',JSON.stringify(h.slice(0,500)));
+  const hist = JSON.parse(localStorage.getItem('history')||'[]');
+  hist.unshift({time:new Date().toLocaleString(), serial, inspector});
+  localStorage.setItem('history', JSON.stringify(hist.slice(0,500)));
 }
 function showHistory(){
-  const h=JSON.parse(localStorage.getItem('history')||'[]');
-  alert(h.map(v=>`${v.time}  ${v.inspector}  ${v.serial}`).join('\n')||'履歴なし');
+  const hist = JSON.parse(localStorage.getItem('history')||'[]');
+  alert(hist.map(h=>`${h.time}  ${h.inspector}  ${h.serial}`).join('\n')||'履歴なし');
+}
+
+/** ====== 後始末 ====== */
+function cleanupStream(){
+  try{ codeReader && codeReader.reset(); }catch(e){}
+  try{
+    const v = document.getElementById('video');
+    const tracks = v.srcObject && v.srcObject.getVideoTracks ? v.srcObject.getVideoTracks() : [];
+    tracks.forEach(t => t.stop());
+  }catch(e){}
+}
+
+/** ====== 変換ロジック ======
+ * 1) パチンコ（P/M 始まり）: 先頭(P|M), 2, メーカー2字, 年(2桁), …, 末尾6桁が製造番号
+ *    - 年→記号: yearToLetterFromYY（例 22:J, 23:K, 24:L, 25:M, 26:N ... Z→A）
+ *    - スマパチ(M)は製造番号の前に 'M' を付加
+ * 2) スロット（日工組のエンコード例）: ^[A-Z0-9]{2}([A-Z]{2})\d{9}$
+ *    - 例: C0DA230008944 → DA-K C008944
+ *    - メーカーごとのクラス記号は classMap で管理（必要に応じて拡張）
+ * 3) スロット（日電協など “人が読む番号”）: 原文のまま
+ */
+function parseSerial(t){
+  if(!t) return t;
+
+  // 1) パチンコ（P/M）
+  const mPachi = /^([PM])2([A-Z]{2})(\d{2})\d+$/i.exec(t);
+  if (mPachi){
+    const head  = mPachi[1].toUpperCase();   // 'P' or 'M'
+    const maker = mPachi[2].toUpperCase();   // 'DL','DT','SA'...
+    const yy    = mPachi[3];                 // '22','23','24','25'...
+    const tail6 = t.slice(-6);               // 末尾6桁
+    const hyphenLetter = yearToLetterFromYY(yy);
+    const numPrefix = (head === 'M') ? 'M' : '';
+    return `${maker}-${hyphenLetter} ${numPrefix}${tail6}`;
+  }
+
+  // 2) スロット（日工組）
+  const mSlotNikkou = /^[A-Z0-9]{2}([A-Z]{2})\d{9}$/i.exec(t);
+  if (mSlotNikkou){
+    const maker = mSlotNikkou[1].toUpperCase(); // 'DA','MZ','BB' etc.
+    const prefixLetter = t[0].toUpperCase();    // 例: C / K など（番号の先頭に付く）
+    const tail6 = t.slice(-6);
+    const classMap = { DA:'K', MZ:'J', BB:'L' }; // 既知の割当。必要に応じて拡張
+    const cls = classMap[maker] || 'K';
+    return `${maker}-${cls} ${prefixLetter}${tail6}`;
+  }
+
+  // 3) それ以外（スロ日電協等）は原文のまま
+  return t;
 }
 </script>
 </body>
