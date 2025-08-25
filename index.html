@@ -155,9 +155,13 @@ function saveHistory(serial){
   localStorage.setItem('history', JSON.stringify(hist.slice(0,500)));
 }
 function showHistory(){
-  const hist = JSON.parse(localStorage.getItem('history')||'[]');
-  alert(hist.map(h=>`${h.time}  ${h.inspector}  ${h.serial}`).join('\n')||'履歴なし');
+  const RESPONSES_SHEET_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=811114478#gid=811114478";
+  const w = window.open(RESPONSES_SHEET_URL, "_blank");
+  if(!w){
+    alert("ポップアップがブロックされています。ブラウザ設定で許可してください。");
+  }
 }
+
 
 /** ====== 後始末 ====== */
 function cleanupStream(){
