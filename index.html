@@ -76,19 +76,13 @@ let torchSupported=false;         // この端末/カメラでネイティブtor
  * 基準: 2022年→'J'。以降はアルファベット順に進む（Zの次はA）。
  * 例: 2022→J, 2023→K, 2024→L, 2025→M, 2026→N
  */
-function yearToLetterFromYY(yyStr){
-  const yy = parseInt(yyStr, 10);
-  if (isNaN(yy)) return '?';
-  const baseYear = 22;                 // '22' (＝2022)
-  const baseCharCode = 'J'.charCodeAt(0);
-  let offset = (yy - baseYear) % 26;
-  if (offset < 0) offset += 26;
-  let code = baseCharCode + offset;
-  // Z(90) の次は A(65) にループさせる
-  if (code > 'Z'.charCodeAt(0)) {
-    code = 'A'.charCodeAt(0) + (code - 'Z'.charCodeAt(0) - 1);
-  }
-  return String.fromCharCode(code);
+function yearDigitsToLetter(yyStr){
+  const yy = Number(String(yyStr).replace(/\D/g, '')); // "24" 等
+  if (!Number.isFinite(yy)) return '?';
+  // 2020→H を起点に 26 文字を循環（…Z の次は A）
+  const baseIdx = 'H'.charCodeAt(0) - 'A'.charCodeAt(0); // 7
+  const idx = ((yy - 20) % 26 + 26) % 26;                // 0..25
+  return String.fromCharCode('A'.charCodeAt(0) + ((baseIdx + idx) % 26));
 }
 
 /** ====== スキャン開始 ====== */
@@ -192,32 +186,38 @@ function cleanupStream(){
  * 3) スロット（日電協など “人が読む番号”）: 原文のまま
  */
 function parseSerial(t){
-  if(!t) return t;
+  if (t == null) return t;
+  t = String(t).trim();
 
-  // 1) パチンコ（P/M）
-  const mPachi = /^([PM])2([A-Z]{2})(\d{2})\d+$/i.exec(t);
-  if (mPachi){
-    const head  = mPachi[1].toUpperCase();   // 'P' or 'M'
-    const maker = mPachi[2].toUpperCase();   // 'DL','DT','SA'...
-    const yy    = mPachi[3];                 // '22','23','24','25'...
-    const tail6 = t.slice(-6);               // 末尾6桁
-    const hyphenLetter = yearToLetterFromYY(yy);
-    const numPrefix = (head === 'M') ? 'M' : '';
-    return `${maker}-${hyphenLetter} ${numPrefix}${tail6}`;
+  // 共通：先頭1文字（系統）・5,6桁目の年・末尾6桁
+  const head = t[0]?.toUpperCase() || '';
+  const yyDigits = t.length >= 6 ? t.slice(4, 6) : '';
+  const yearLetter = yearDigitsToLetter(yyDigits);
+  const tail6 = (t.match(/(\d{6})$/) || [,''])[1] || '';
+
+  // メーカー2字は「先頭1文字＋2桁目の部位」の次の2字（例：P1**WW**24..., C0**HC**22...）
+  const makerMatch = /^[PMCK].([A-Z]{2})/i.exec(t);
+  const maker = makerMatch ? makerMatch[1].toUpperCase() : '';
+
+  /* ===== パチンコ（P/M）===== */
+  if (head === 'P' || head === 'M'){
+    if (maker && yearLetter !== '?' && tail6){
+      const prefix = (head === 'M') ? 'M' : ''; // スマパチは製番前に M
+      return `${maker}-${yearLetter} ${prefix}${tail6}`;
+    }
+    return t; // 取り切れなければ素通し
   }
 
-  // 2) スロット（日工組）
-  const mSlotNikkou = /^[A-Z0-9]{2}([A-Z]{2})\d{9}$/i.exec(t);
-  if (mSlotNikkou){
-    const maker = mSlotNikkou[1].toUpperCase(); // 'DA','MZ','BB' etc.
-    const prefixLetter = t[0].toUpperCase();    // 例: C / K など（番号の先頭に付く）
-    const tail6 = t.slice(-6);
-    const classMap = { DA:'K', MZ:'J', BB:'L' }; // 既知の割当。必要に応じて拡張
-    const cls = classMap[maker] || 'K';
-    return `${maker}-${cls} ${prefixLetter}${tail6}`;
+  /* ===== スロット（日工組：C/K）===== */
+  if (head === 'C' || head === 'K'){
+    // 2桁目は部位コード：0=本体 / 3=回胴 / 2=筐体 / 1=主基板（出力には使わない）
+    if (/[0321]/.test(t[1] || '') && maker && yearLetter !== '?' && tail6){
+      return `${maker}-${yearLetter} ${head}${tail6}`;
+    }
+    return t; // 日電協など可読形式は素通し
   }
 
-  // 3) それ以外（スロ日電協等）は原文のまま
+  /* ===== その他（素通し）===== */
   return t;
 }
 </script>
