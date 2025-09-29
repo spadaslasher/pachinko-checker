@@ -29,9 +29,19 @@
     #top{display:block}
     #scanner{display:none}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+    .statline{padding:4px 0;font-size:15px}
+
   </style>
 </head>
 <body>
+  <!-- 進捗サマリ表示 -->
+<div class="card" style="text-align:center; margin-bottom:12px;">
+  <h2>点検進捗</h2>
+  <p>予定台数: <span id="planCount">-</span></p>
+  <p>完了台数: <span id="doneCount">-</span></p>
+  <p>残台数: <span id="remainCount">-</span></p>
+</div>
+
   <div id="top">
     <h1>点検者を選択</h1>
     <div class="card" style="text-align:center">
@@ -43,8 +53,10 @@
       <button class="btn" onclick="startScan('髙橋')">髙橋</button>
 
       <div style="margin-top:10px">
-        <button class="btn sub" onclick="showHistory()">履歴を見る</button>
-      </div>
+  <button class="btn sub" onclick="showHistory()">履歴を見る</button>
+  <button class="btn sub" onclick="openDashboard()">点検進捗を確認</button>
+</div>
+
     </div>
   </div>
 
@@ -164,6 +176,15 @@ function showHistory(){
     alert("ポップアップがブロックされています。ブラウザ設定で許可してください。");
   }
 }
+  /** ====== Dashboard シートを開く ====== */
+function openDashboard(){
+  const DASHBOARD_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=2043079432#gid=2043079432";
+  const w = window.open(DASHBOARD_URL, "_blank");
+  if(!w){
+    alert("ポップアップがブロックされています。ブラウザ設定で許可してください。");
+  }
+}
+
 
 
 /** ====== 後始末 ====== */
