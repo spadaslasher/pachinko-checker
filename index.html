@@ -79,6 +79,11 @@ const FORM_URL_BASE = "https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yA
 const ENTRY_SERIAL   = "entry.797900650"; // 製造番号
 const ENTRY_INSPECT  = "entry.983313981"; // 点検者
 
+/* === Dashboard 連携（数値取得＆ジャンプ） === */
+const DASHBOARD_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=2043079432#gid=2043079432";
+const COUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=2043079432&range=B1:B3";
+
+
 /** ====== 変数 ====== */
 let inspector='', codeReader;
 let streamTrack=null;             // 現在のカメラトラック（torch制御に使用）
@@ -179,6 +184,44 @@ function showHistory(){
     alert("ポップアップがブロックされています。ブラウザ設定で許可してください。");
   }
 }
+
+/** Dashboard を新しいタブで開く（ボタン用） */
+function openProgress(){
+  const w = window.open(DASHBOARD_URL, "_blank");
+  if(!w){ alert("ポップアップがブロックされています。ブラウザ設定で許可してください。"); }
+}
+
+/** B1:B3（予定/完了/残）をCSVで取得してTOPに表示 */
+async function loadCounters(){
+  try{
+    const res = await fetch(COUNTS_CSV_URL, { cache: "no-store" });
+    if(!res.ok) throw new Error("HTTP "+res.status);
+    const csv = await res.text();
+
+    // 1列CSV想定：1行目=B1(予定), 2行目=B2(完了), 3行目=B3(残)
+    const rows = csv.trim().split(/\r?\n/).map(r => r.replace(/^"|"$|,/g,"").trim());
+    const plan = parseInt(rows[0] || "0", 10) || 0;
+    const done = parseInt(rows[1] || "0", 10) || 0;
+    // B3 に値があるならそれを優先、無いなら plan-done で計算
+    const remain = rows[2] && rows[2]!=="" ? (parseInt(rows[2],10)||0) : Math.max(0, plan - done);
+
+    document.getElementById("planCount").textContent   = plan;
+    document.getElementById("doneCount").textContent   = done;
+    document.getElementById("remainCount").textContent = remain;
+  }catch(e){
+    // 取得できない（権限/URL/ネット）時はダッシュを表示
+    document.getElementById("planCount").textContent   = "-";
+    document.getElementById("doneCount").textContent   = "-";
+    document.getElementById("remainCount").textContent = "-";
+    // console.warn("loadCounters failed:", e);
+  }
+}
+
+/** 画面読み込み時に一度自動更新（失敗しても無視） */
+window.addEventListener("load", () => {
+  loadCounters();
+});
+  
   /** ====== Dashboard シートを開く ====== */
 function openDashboard(){
   const DASHBOARD_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=2043079432#gid=2043079432";
