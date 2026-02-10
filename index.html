@@ -4,23 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>点検結果報告アプリ（年コード自動判定・統一遷移）</title>
-  <!-- タブのファビコン -->
-<link rel="icon" type="image/png" href="アプリロゴ.png">
-
-<!-- iPhoneのホーム画面アイコン（推奨：180×180の正方形） -->
-<link rel="apple-touch-icon" href="アプリロゴ.png">
-
-<!--（任意）アドレスバーの色 -->
-<meta name="theme-color" content="#007bff">
-
+  <link rel="icon" type="image/png" href="アプリロゴ.png">
+  <link rel="apple-touch-icon" href="アプリロゴ.png">
+  <meta name="theme-color" content="#007bff">
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; }
+    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; --info:#17a2b8; }
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;text-align:center;padding:16px}
     h1{margin:8px 0 12px;color:#222}
     .btn{margin:6px;padding:10px 16px;font-size:16px;border:none;border-radius:10px;background:var(--brand);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.1)}
     .btn:active{transform:translateY(1px)}
     .btn.sub{background:#6c757d}
+    .btn.info{background:var(--info)}
     .btn.ok{background:var(--ok)}
     .card{max-width:480px;margin:8px auto;background:#fff;border-radius:12px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:left}
     video{width:100%;max-width:480px;border-radius:10px;background:#000}
@@ -29,12 +24,23 @@
     #top{display:block}
     #scanner{display:none}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
-    .statline{padding:4px 0;font-size:15px}
-
+    
+    /* お知らせ欄のデザイン */
+    .news-box {
+      background-color: #e3f2fd;
+      border-left: 5px solid #2196f3;
+      padding: 10px;
+      margin-top: 15px;
+      text-align: left;
+      border-radius: 4px;
+      display: none; /* 初期は非表示（中身がある時だけ出す） */
+    }
+    .news-title { font-weight:bold; color:#1565c0; font-size:14px; margin-bottom:4px; }
+    .news-content { font-size:14px; color:#333; white-space: pre-wrap; line-height: 1.4; }
   </style>
 </head>
 <body>
- <!-- 進捗サマリ表示 -->
+
 <div id="summaryCard" class="card" style="text-align:center; margin-bottom:12px;">
   <h2>点検進捗</h2>
   <p>予定台数: <span id="planCount">-</span></p>
@@ -42,87 +48,94 @@
   <p>残台数: <span id="remainCount">-</span></p>
 </div>
 
-  <div id="top">
-    <h1>点検者を選択</h1>
-    <div class="card" style="text-align:center">
-      <button class="btn" onclick="startScan('羽染')">羽染</button>
-      <button class="btn" onclick="startScan('梅原')">梅原</button>
-      <button class="btn" onclick="startScan('明田川')">明田川</button>
-      <button class="btn" onclick="startScan('山口')">山口</button>
-      <button class="btn" onclick="startScan('佐藤')">佐藤</button>
-      <button class="btn" onclick="startScan('髙橋')">髙橋</button>
-      <button class="btn" onclick="startScan('釣川')">釣川</button>
-      
-      <div style="margin-top:10px">
-  <button class="btn sub" onclick="showHistory()">履歴を見る</button>
-  <button class="btn sub" onclick="openDashboard()">未送信台を確認</button>
+<div id="top">
+  <h1>点検者を選択</h1>
+  <div class="card" style="text-align:center">
+    <button class="btn" onclick="startScan('羽染')">羽染</button>
+    <button class="btn" onclick="startScan('梅原')">梅原</button>
+    <button class="btn" onclick="startScan('明田川')">明田川</button>
+    <button class="btn" onclick="startScan('山口')">山口</button>
+    <button class="btn" onclick="startScan('佐藤')">佐藤</button>
+    <button class="btn" onclick="startScan('髙橋')">髙橋</button>
+    <button class="btn" onclick="startScan('釣川')">釣川</button>
+    
+    <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+
+    <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; justify-content:center; gap:8px;">
+            <button class="btn sub" style="margin:0; flex:1;" onclick="showHistory()">履歴を見る</button>
+            <button class="btn sub" style="margin:0; flex:1;" onclick="openDashboard()">未送信台を確認</button>
+        </div>
+        <button class="btn info" style="width:100%; margin:0;" onclick="openPastHistory()">📂 過去の点検履歴</button>
+    </div>
+
+    <div id="newsArea" class="news-box">
+        <div class="news-title">📢 お知らせ</div>
+        <div id="newsText" class="news-content">読み込み中...</div>
+    </div>
+
+  </div>
 </div>
 
+<div id="scanner">
+  <div class="card">
+    <div class="toolbar">
+      <button id="btnTorch" class="btn sub" style="display:none" onclick="onTorchClick()">🔦 ライト</button>
+      <button class="btn sub" onclick="manualEntry()">QR読めない→手入力</button>
     </div>
-  </div>
 
-  <div id="scanner">
-    <div class="card">
-      <div class="toolbar">
-        <button id="btnTorch" class="btn sub" style="display:none" onclick="onTorchClick()">🔦 ライト</button>
-        <button class="btn sub" onclick="manualEntry()">QR読めない→手入力</button>
-      </div>
-
-      <video id="video" autoplay playsinline></video>
-      <div id="status">QRコードをかざしてください…</div>
-      <div id="serial"></div>
-    </div>
+    <video id="video" autoplay playsinline></video>
+    <div id="status">QRコードをかざしてください…</div>
+    <div id="serial"></div>
   </div>
+</div>
 
 <script>
 /** ====== 設定 ====== */
 const FORM_URL_BASE = "https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform";
-const ENTRY_SERIAL   = "entry.797900650"; // 製造番号
-const ENTRY_INSPECT  = "entry.983313981"; // 点検者
+const ENTRY_SERIAL   = "entry.797900650"; 
+const ENTRY_INSPECT  = "entry.983313981";
 
-/* === Dashboard 連携（数値取得＆ジャンプ） === */
+/* === スプレッドシート連携 === */
 const DASHBOARD_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=2043079432#gid=2043079432";
+// 進捗（B1:B3）
 const COUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=2043079432&range=B1:B3";
+// お知らせ（B5）← ★ここを新設しました。B5セルを読みに行きます。
+const NEWS_CSV_URL   = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=2043079432&range=B5";
 
+// 過去の点検履歴URL
+const PAST_HISTORY_URL = "https://docs.google.com/spreadsheets/d/1w75zFfpDTkZ2ruyQz1g5f8_cnTe_SnIBCqKkOTuy9yc/edit?usp=drive_link";
 
 /** ====== 変数 ====== */
 let inspector='', codeReader;
-let streamTrack=null;             // 現在のカメラトラック（torch制御に使用）
-let torchSupported=false;         // この端末/カメラでネイティブtorchが使えるか
+let streamTrack=null;
+let torchSupported=false;
 
-/** ====== 年コード → 文字（J,K,L,M,N,…Z, A…） ======
- * 基準: 2022年→'J'。以降はアルファベット順に進む（Zの次はA）。
- * 例: 2022→J, 2023→K, 2024→L, 2025→M, 2026→N
- */
 function yearDigitsToLetter(yyStr){
-  const yy = Number(String(yyStr).replace(/\D/g, '')); // "24" 等
+  const yy = Number(String(yyStr).replace(/\D/g, ''));
   if (!Number.isFinite(yy)) return '?';
-  // 2020→H を起点に 26 文字を循環（…Z の次は A）
-  const baseIdx = 'H'.charCodeAt(0) - 'A'.charCodeAt(0); // 7
-  const idx = ((yy - 20) % 26 + 26) % 26;                // 0..25
+  const baseIdx = 'H'.charCodeAt(0) - 'A'.charCodeAt(0);
+  const idx = ((yy - 20) % 26 + 26) % 26;
   return String.fromCharCode('A'.charCodeAt(0) + ((baseIdx + idx) % 26));
 }
 
-/** ====== スキャン開始 ====== */
 function startScan(name){
   inspector = name;
   document.getElementById('top').style.display='none';
   document.getElementById('scanner').style.display='block';
-  // 進捗サマリを非表示にする
-const summary = document.getElementById('summaryCard');
-if(summary) summary.style.display = 'none';
+  const summary = document.getElementById('summaryCard');
+  if(summary) summary.style.display = 'none';
 
   codeReader = new ZXing.BrowserMultiFormatReader();
   const vid = document.getElementById('video');
 
-  // ZXing にストリームを開かせる（背面カメラ指定）
   codeReader.decodeOnceFromConstraints({ video:{ facingMode:'environment' } }, vid)
   .then(res => {
     const raw = res.getText();
-    const formatted = parseSerial(raw); // 変換
+    const formatted = parseSerial(raw);
     document.getElementById('serial').textContent = '読み取り: ' + formatted;
     saveHistory(formatted);
-    openForm(formatted);               // 統一：別タブで開く
+    openForm(formatted);
     cleanupStream();
     setTimeout(() => location.reload(), 2000);
   })
@@ -130,7 +143,6 @@ if(summary) summary.style.display = 'none';
     document.getElementById('status').textContent = 'エラー: ' + err;
   });
 
-  // 少し待って video にストリームが乗った後に torch 可否を判定
   setTimeout(() => {
     try{
       const v = document.getElementById('video');
@@ -138,103 +150,98 @@ if(summary) summary.style.display = 'none';
       if(track){
         streamTrack = track;
         const caps = track.getCapabilities ? track.getCapabilities() : {};
-        torchSupported = !!caps.torch; // iOSは未対応のためfalseのままになる
+        torchSupported = !!caps.torch; 
         const btn = document.getElementById('btnTorch');
         btn.style.display = torchSupported ? 'inline-block' : 'none';
       }
-    }catch(e){ /* ignore */ }
+    }catch(e){ }
   }, 600);
 }
 
-/** ====== フォームを開く（統一して別タブ） ====== */
 function openForm(serial){
   const url = `${FORM_URL_BASE}?usp=pp_url&${ENTRY_SERIAL}=${encodeURIComponent(serial)}&${ENTRY_INSPECT}=${encodeURIComponent(inspector)}`;
   const win = window.open(url, '_blank');
-  if(!win){
-    alert('ポップアップがブロックされています。ブラウザ設定で許可してください。');
-  }
+  if(!win){ alert('ポップアップがブロックされています。'); }
 }
 
-/** ====== ライト（対応端末のみ） ====== */
 function onTorchClick(){
   if(!torchSupported || !streamTrack) return;
   try{
     const settings = streamTrack.getSettings ? streamTrack.getSettings() : {};
     const isOn = settings.torch === true;
     streamTrack.applyConstraints({ advanced:[{ torch: !isOn }] }).catch(()=>{});
-  }catch(e){ /* ignore */ }
+  }catch(e){ }
 }
 
-/** ====== 手入力モード ====== */
 function manualEntry(){
   const url = `${FORM_URL_BASE}?usp=pp_url&${ENTRY_INSPECT}=${encodeURIComponent(inspector)}`;
   const win = window.open(url,'_blank');
-  if(!win){ alert('ポップアップがブロックされています。ブラウザ設定で許可してください。'); }
+  if(!win){ alert('ポップアップがブロックされています。'); }
 }
 
-/** ====== 履歴 ====== */
 function saveHistory(serial){
   const hist = JSON.parse(localStorage.getItem('history')||'[]');
   hist.unshift({time:new Date().toLocaleString(), serial, inspector});
   localStorage.setItem('history', JSON.stringify(hist.slice(0,500)));
 }
+
 function showHistory(){
   const RESPONSES_SHEET_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=811114478#gid=811114478";
-  const w = window.open(RESPONSES_SHEET_URL, "_blank");
-  if(!w){
-    alert("ポップアップがブロックされています。ブラウザ設定で許可してください。");
-  }
+  window.open(RESPONSES_SHEET_URL, "_blank");
 }
 
-/** Dashboard を新しいタブで開く（ボタン用） */
-function openProgress(){
-  const w = window.open(DASHBOARD_URL, "_blank");
-  if(!w){ alert("ポップアップがブロックされています。ブラウザ設定で許可してください。"); }
+function openDashboard(){
+  window.open(DASHBOARD_URL, "_blank");
 }
 
-/** B1:B3（予定/完了/残）をCSVで取得してTOPに表示 */
-async function loadCounters(){
+/* ★新機能: 過去の履歴を開く */
+function openPastHistory(){
+  window.open(PAST_HISTORY_URL, "_blank");
+}
+
+/** B1:B3（数値）と B5（お知らせ）を取得 */
+async function loadData(){
+  // 1. 数値取得
   try{
     const res = await fetch(COUNTS_CSV_URL, { cache: "no-store" });
-    if(!res.ok) throw new Error("HTTP "+res.status);
-    const csv = await res.text();
+    if(res.ok){
+        const csv = await res.text();
+        const rows = csv.trim().split(/\r?\n/).map(r => r.replace(/^"|"$|,/g,"").trim());
+        const plan = parseInt(rows[0] || "0", 10) || 0;
+        const done = parseInt(rows[1] || "0", 10) || 0;
+        const remain = rows[2] && rows[2]!=="" ? (parseInt(rows[2],10)||0) : Math.max(0, plan - done);
+        
+        document.getElementById("planCount").textContent   = plan;
+        document.getElementById("doneCount").textContent   = done;
+        document.getElementById("remainCount").textContent = remain;
+    }
+  }catch(e){ console.warn("Counters load failed", e); }
 
-    // 1列CSV想定：1行目=B1(予定), 2行目=B2(完了), 3行目=B3(残)
-    const rows = csv.trim().split(/\r?\n/).map(r => r.replace(/^"|"$|,/g,"").trim());
-    const plan = parseInt(rows[0] || "0", 10) || 0;
-    const done = parseInt(rows[1] || "0", 10) || 0;
-    // B3 に値があるならそれを優先、無いなら plan-done で計算
-    const remain = rows[2] && rows[2]!=="" ? (parseInt(rows[2],10)||0) : Math.max(0, plan - done);
-
-    document.getElementById("planCount").textContent   = plan;
-    document.getElementById("doneCount").textContent   = done;
-    document.getElementById("remainCount").textContent = remain;
-  }catch(e){
-    // 取得できない（権限/URL/ネット）時はダッシュを表示
-    document.getElementById("planCount").textContent   = "-";
-    document.getElementById("doneCount").textContent   = "-";
-    document.getElementById("remainCount").textContent = "-";
-    // console.warn("loadCounters failed:", e);
-  }
+  // 2. お知らせ取得（B5セル）
+  try{
+    const res = await fetch(NEWS_CSV_URL, { cache: "no-store" });
+    if(res.ok){
+        let text = await res.text();
+        // CSV特有のダブルクォート除去など
+        text = text.trim().replace(/^"|"$/g, "").replace(/""/g, '"');
+        
+        const box = document.getElementById("newsArea");
+        const content = document.getElementById("newsText");
+        
+        if(text && text.length > 0){
+            content.textContent = text;
+            box.style.display = "block"; // 文字がある時だけ表示
+        } else {
+            box.style.display = "none";
+        }
+    }
+  }catch(e){ console.warn("News load failed", e); }
 }
 
-/** 画面読み込み時に一度自動更新（失敗しても無視） */
 window.addEventListener("load", () => {
-  loadCounters();
+  loadData();
 });
-  
-  /** ====== Dashboard シートを開く ====== */
-function openDashboard(){
-  const DASHBOARD_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=2043079432#gid=2043079432";
-  const w = window.open(DASHBOARD_URL, "_blank");
-  if(!w){
-    alert("ポップアップがブロックされています。ブラウザ設定で許可してください。");
-  }
-}
 
-
-
-/** ====== 後始末 ====== */
 function cleanupStream(){
   try{ codeReader && codeReader.reset(); }catch(e){}
   try{
@@ -244,48 +251,29 @@ function cleanupStream(){
   }catch(e){}
 }
 
-/** ====== 変換ロジック ======
- * 1) パチンコ（P/M 始まり）: 先頭(P|M), 2, メーカー2字, 年(2桁), …, 末尾6桁が製造番号
- *    - 年→記号: yearToLetterFromYY（例 22:J, 23:K, 24:L, 25:M, 26:N ... Z→A）
- *    - スマパチ(M)は製造番号の前に 'M' を付加
- * 2) スロット（日工組のエンコード例）: ^[A-Z0-9]{2}([A-Z]{2})\d{9}$
- *    - 例: C0DA230008944 → DA-K C008944
- *    - メーカーごとのクラス記号は classMap で管理（必要に応じて拡張）
- * 3) スロット（日電協など “人が読む番号”）: 原文のまま
- */
 function parseSerial(t){
   if (t == null) return t;
   t = String(t).trim();
-
-  // 共通：先頭1文字（系統）・5,6桁目の年・末尾6桁
   const head = t[0]?.toUpperCase() || '';
   const yyDigits = t.length >= 6 ? t.slice(4, 6) : '';
   const yearLetter = yearDigitsToLetter(yyDigits);
   const tail6 = (t.match(/(\d{6})$/) || [,''])[1] || '';
-
-  // メーカー2字は「先頭1文字＋2桁目の部位」の次の2字（例：P1**WW**24..., C0**HC**22...）
   const makerMatch = /^[PMCK].([A-Z]{2})/i.exec(t);
   const maker = makerMatch ? makerMatch[1].toUpperCase() : '';
 
-  /* ===== パチンコ（P/M）===== */
   if (head === 'P' || head === 'M'){
     if (maker && yearLetter !== '?' && tail6){
-      const prefix = (head === 'M') ? 'M' : ''; // スマパチは製番前に M
+      const prefix = (head === 'M') ? 'M' : '';
       return `${maker}-${yearLetter} ${prefix}${tail6}`;
     }
-    return t; // 取り切れなければ素通し
+    return t; 
   }
-
-  /* ===== スロット（日工組：C/K）===== */
   if (head === 'C' || head === 'K'){
-    // 2桁目は部位コード：0=本体 / 3=回胴 / 2=筐体 / 1=主基板（出力には使わない）
     if (/[0321]/.test(t[1] || '') && maker && yearLetter !== '?' && tail6){
       return `${maker}-${yearLetter} ${head}${tail6}`;
     }
-    return t; // 日電協など可読形式は素通し
+    return t; 
   }
-
-  /* ===== その他（素通し）===== */
   return t;
 }
 </script>
