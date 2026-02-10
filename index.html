@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>点検アプリ（写真＆QR連携版）</title>
+  <title>点検アプリ（完成版）</title>
   <link rel="icon" type="image/png" href="アプリロゴ.png">
   <link rel="apple-touch-icon" href="アプリロゴ.png">
   <meta name="theme-color" content="#007bff">
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; --info:#17a2b8; }
+    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; --info:#17a2b8; --drive:#6f42c1; }
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;text-align:center;padding:16px}
     h1{margin:8px 0 12px;color:#222}
     .btn{margin:6px;padding:12px 20px;font-size:16px;border:none;border-radius:10px;background:var(--brand);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.1)}
     .btn:active{transform:translateY(1px)}
     .btn.sub{background:#6c757d; padding:8px 16px; font-size:14px;}
     .btn.info{background:var(--info)}
+    .btn.drive{background:var(--drive)}
     .card{max-width:480px;margin:8px auto;background:#fff;border-radius:12px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:left}
     
     video, canvas {width:100%;max-width:480px;border-radius:10px;background:#000; display:none;}
@@ -62,11 +63,16 @@
     <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
     
     <div style="display:flex; justify-content:center; gap:8px;">
-        <button class="btn sub" onclick="showHistory()">履歴</button>
-        <button class="btn sub" onclick="openDashboard()">未送信</button>
+        <button class="btn sub" style="flex:1;" onclick="showHistory()">履歴</button>
+        <button class="btn sub" style="flex:1;" onclick="openDashboard()">未送信</button>
     </div>
+    
     <div style="margin-top:8px;">
         <button class="btn info" style="width:100%;" onclick="openPastHistory()">📂 過去の履歴</button>
+    </div>
+
+    <div style="margin-top:8px;">
+        <button class="btn drive" style="width:100%;" onclick="openPhotoFolder()">📷 保存された写真を見る</button>
     </div>
 
     <div id="newsArea" class="news-box">
@@ -79,6 +85,7 @@
 <div id="view-camera" class="view-section">
     <div class="card" style="text-align:center;">
         <h3>① トップユニット装着済の遊技台を撮影</h3>
+        
         <video id="cameraVideo" autoplay playsinline></video>
         <img id="photoPreview" />
         <canvas id="cameraCanvas"></canvas>
@@ -122,8 +129,11 @@
 
 <script>
 /** ====== 設定 ====== */
-// ★ここに GASのウェブアプリURL を貼り直してください！
+// GASウェブアプリURL
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzXAahoozZAc92FjMxVZ5RVAx6iWCeBLSpnQUYBRgAg6w7LlDwUxze6Rm7aV5yPc7DKMg/exec";
+
+// 写真フォルダURL
+const PHOTO_FOLDER_URL = "https://drive.google.com/drive/u/0/folders/1Z1q480XPFBFBoIpdFvbn4K4yto9r_jOA";
 
 const FORM_URL_BASE = "https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform";
 const ENTRY_SERIAL   = "entry.797900650"; 
@@ -139,13 +149,13 @@ const PAST_HISTORY_URL = "https://docs.google.com/spreadsheets/d/1w75zFfpDTkZ2ru
 let inspector='';
 let codeReader;
 let streamTrack=null;
-let capturedImageBase64 = null; // 撮影した写真データ
+let capturedImageBase64 = null; 
 
 /* === 1. 撮影フロー開始 === */
 function startFlow(name){
     inspector = name;
     switchView('view-camera');
-    startCamera(); // 撮影用カメラ起動
+    startCamera(); 
 }
 
 /* === 画面切り替えヘルパー === */
@@ -154,15 +164,15 @@ function switchView(id){
     document.getElementById(id).classList.add('active');
 }
 
-/* === カメラ処理（写真撮影用） === */
+/* === カメラ処理 === */
 async function startCamera(){
     const video = document.getElementById('cameraVideo');
     video.style.display = 'block';
     document.getElementById('photoPreview').style.display = 'none';
     
-    // ボタンの初期状態
+    // ボタン初期化
     document.getElementById('btnShutter').style.display = 'inline-block';
-    document.getElementById('btnSkip').style.display = 'inline-block'; // ★スキップ表示
+    document.getElementById('btnSkip').style.display = 'inline-block';
     document.getElementById('btnRetake').style.display = 'none';
     document.getElementById('btnNextScan').style.display = 'none';
 
@@ -182,44 +192,37 @@ function takePhoto(){
     const canvas = document.getElementById('cameraCanvas');
     const context = canvas.getContext('2d');
     
-    // 現在のビデオサイズに合わせる
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // 画像データ化 (JPEG 0.8品質)
     capturedImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
     
-    // プレビュー表示
     const preview = document.getElementById('photoPreview');
     preview.src = capturedImageBase64;
     preview.style.display = 'block';
     video.style.display = 'none';
     
-    // ボタン切り替え
     document.getElementById('btnShutter').style.display = 'none';
-    document.getElementById('btnSkip').style.display = 'none'; // ★撮影後はスキップ消す
+    document.getElementById('btnSkip').style.display = 'none';
     document.getElementById('btnRetake').style.display = 'inline-block';
     document.getElementById('btnNextScan').style.display = 'inline-block';
     
-    // ストリーム停止（節電）
     if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 }
 
 function retakePhoto(){
     capturedImageBase64 = null;
-    startCamera(); // カメラ再開（ボタン状態もリセットされる）
+    startCamera(); 
 }
 
-// ★追加機能：写真をスキップする
 function skipPhoto(){
-    capturedImageBase64 = null; // 画像データを空にする
+    capturedImageBase64 = null; 
     goToScan();
 }
 
 /* === 2. QRスキャンへ進む === */
 function goToScan(){
-    // 念のためカメラ停止
     const video = document.getElementById('cameraVideo');
     if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 
@@ -244,7 +247,6 @@ function startScanProcess(){
         document.getElementById('status').textContent = 'エラー: ' + err;
     });
 
-    // ライトチェック
     setTimeout(() => {
         try{
              const track = vid.srcObject.getVideoTracks()[0];
@@ -261,18 +263,20 @@ async function handleComplete(serial){
     cleanupStream();
     switchView('view-sending');
 
-    // ★画像がある場合のみGASへ送信
     if(capturedImageBase64){
         document.getElementById('msgSending').textContent = "送信中...";
         document.getElementById('msgDetail').textContent = "写真をアップロードしています";
         
         if(GAS_API_URL && GAS_API_URL.startsWith("https")){
             try {
+                // ★ここを変更：ファイル名に担当者名を結合
+                const finalFileName = inspector + '_' + serial;
+
                 await fetch(GAS_API_URL, {
                     method: "POST",
                     body: JSON.stringify({
                         image: capturedImageBase64,
-                        filename: serial,
+                        filename: finalFileName, // 担当者_製造番号
                         inspector: inspector
                     })
                 });
@@ -284,13 +288,11 @@ async function handleComplete(serial){
             alert("GASのURLが設定されていません。写真は保存されません。");
         }
     } else {
-        // ★写真がない場合はメッセージだけ変えてすぐ次へ
         document.getElementById('msgSending').textContent = "処理完了";
         document.getElementById('msgDetail').textContent = "フォームを開きます...";
-        await new Promise(r => setTimeout(r, 500)); // 一瞬待つ
+        await new Promise(r => setTimeout(r, 500));
     }
 
-    // 履歴保存 & フォームを開く
     saveHistory(serial);
     openForm(serial);
     
@@ -335,6 +337,7 @@ function saveHistory(serial){
 function showHistory(){ window.open("https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=811114478#gid=811114478", "_blank"); }
 function openDashboard(){ window.open(DASHBOARD_URL, "_blank"); }
 function openPastHistory(){ window.open(PAST_HISTORY_URL, "_blank"); }
+function openPhotoFolder(){ window.open(PHOTO_FOLDER_URL, "_blank"); }
 function manualEntry(){ openForm(''); }
 function onTorchClick(){
   if(streamTrack){
