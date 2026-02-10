@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="アプリロゴ.png">
   <link rel="apple-touch-icon" href="アプリロゴ.png">
   <meta name="theme-color" content="#007bff">
+
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
     :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; --info:#17a2b8; }
@@ -25,18 +26,20 @@
     #scanner{display:none}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
     
-    /* お知らせ欄のデザイン */
+    /* お知らせ欄のデザイン（リスト表示対応） */
     .news-box {
-      background-color: #e3f2fd;
-      border-left: 5px solid #2196f3;
+      background-color: #fff3cd; /* 注意を引く黄色系、または青系(#e3f2fd)でもOK */
+      border-left: 5px solid #ffc107;
       padding: 10px;
       margin-top: 15px;
       text-align: left;
       border-radius: 4px;
-      display: none; /* 初期は非表示（中身がある時だけ出す） */
+      display: none; /* 初期は非表示 */
     }
-    .news-title { font-weight:bold; color:#1565c0; font-size:14px; margin-bottom:4px; }
-    .news-content { font-size:14px; color:#333; white-space: pre-wrap; line-height: 1.4; }
+    .news-title { font-weight:bold; color:#856404; font-size:14px; margin-bottom:6px; border-bottom:1px solid rgba(0,0,0,0.1); padding-bottom:4px;}
+    .news-content { font-size:14px; color:#333; line-height: 1.5; }
+    .news-content ul { padding-left: 20px; margin: 0; }
+    .news-content li { margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -98,13 +101,17 @@ const ENTRY_INSPECT  = "entry.983313981";
 
 /* === スプレッドシート連携 === */
 const DASHBOARD_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=2043079432#gid=2043079432";
-// 進捗（B1:B3）
+
+// 進捗（B1:B3）※元のDashboardシート
 const COUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=2043079432&range=B1:B3";
-// お知らせ（B5）← ★ここを新設しました。B5セルを読みに行きます。
-const NEWS_CSV_URL   = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=2043079432&range=B5";
+
+// ★お知らせ（announceシート A1:A5）
+// ID: 1607150139 を指定
+const NEWS_CSV_URL   = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=1607150139&range=A1:A5";
 
 // 過去の点検履歴URL
 const PAST_HISTORY_URL = "https://docs.google.com/spreadsheets/d/1w75zFfpDTkZ2ruyQz1g5f8_cnTe_SnIBCqKkOTuy9yc/edit?usp=drive_link";
+
 
 /** ====== 変数 ====== */
 let inspector='', codeReader;
@@ -194,14 +201,13 @@ function openDashboard(){
   window.open(DASHBOARD_URL, "_blank");
 }
 
-/* ★新機能: 過去の履歴を開く */
 function openPastHistory(){
   window.open(PAST_HISTORY_URL, "_blank");
 }
 
-/** B1:B3（数値）と B5（お知らせ）を取得 */
+/** データ読み込み（進捗＆お知らせ） */
 async function loadData(){
-  // 1. 数値取得
+  // 1. 進捗数値取得
   try{
     const res = await fetch(COUNTS_CSV_URL, { cache: "no-store" });
     if(res.ok){
@@ -217,20 +223,29 @@ async function loadData(){
     }
   }catch(e){ console.warn("Counters load failed", e); }
 
-  // 2. お知らせ取得（B5セル）
+  // 2. お知らせ取得（A1:A5）リスト表示
   try{
     const res = await fetch(NEWS_CSV_URL, { cache: "no-store" });
     if(res.ok){
-        let text = await res.text();
-        // CSV特有のダブルクォート除去など
-        text = text.trim().replace(/^"|"$/g, "").replace(/""/g, '"');
+        const csv = await res.text();
+        // 行ごとに分割して、空行や余計な記号を除去
+        const rows = csv.trim().split(/\r?\n/)
+                        .map(r => r.replace(/^"|"$|,/g, "").trim()) // CSV特有の"などを除去
+                        .filter(r => r !== ""); // 空行を捨てる
         
         const box = document.getElementById("newsArea");
         const content = document.getElementById("newsText");
         
-        if(text && text.length > 0){
-            content.textContent = text;
-            box.style.display = "block"; // 文字がある時だけ表示
+        if(rows.length > 0){
+            // リストタグ(ul/li)を生成
+            let html = '<ul>';
+            rows.forEach(row => {
+                html += `<li>${row}</li>`;
+            });
+            html += '</ul>';
+            
+            content.innerHTML = html; 
+            box.style.display = "block"; 
         } else {
             box.style.display = "none";
         }
