@@ -78,7 +78,7 @@
 
 <div id="view-camera" class="view-section">
     <div class="card" style="text-align:center;">
-        <h3>① トップユニットを装着した遊技台を撮影</h3>
+        <h3>① 写真を撮影</h3>
         <video id="cameraVideo" autoplay playsinline></video>
         <img id="photoPreview" />
         <canvas id="cameraCanvas"></canvas>
@@ -186,3 +186,214 @@ function takePhoto(){
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // 画像データ化 (JPEG 0.8品質)
+    capturedImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // プレビュー表示
+    const preview = document.getElementById('photoPreview');
+    preview.src = capturedImageBase64;
+    preview.style.display = 'block';
+    video.style.display = 'none';
+    
+    // ボタン切り替え
+    document.getElementById('btnShutter').style.display = 'none';
+    document.getElementById('btnSkip').style.display = 'none'; // ★撮影後はスキップ消す
+    document.getElementById('btnRetake').style.display = 'inline-block';
+    document.getElementById('btnNextScan').style.display = 'inline-block';
+    
+    // ストリーム停止（節電）
+    if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+}
+
+function retakePhoto(){
+    capturedImageBase64 = null;
+    startCamera(); // カメラ再開（ボタン状態もリセットされる）
+}
+
+// ★追加機能：写真をスキップする
+function skipPhoto(){
+    capturedImageBase64 = null; // 画像データを空にする
+    goToScan();
+}
+
+/* === 2. QRスキャンへ進む === */
+function goToScan(){
+    // 念のためカメラ停止
+    const video = document.getElementById('cameraVideo');
+    if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+
+    switchView('view-scan');
+    startScanProcess();
+}
+
+/* === QRスキャン処理 === */
+function startScanProcess(){
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    const vid = document.getElementById('scannerVideo');
+    
+    codeReader.decodeOnceFromConstraints({ video:{ facingMode:'environment' } }, vid)
+    .then(res => {
+        const raw = res.getText();
+        const formatted = parseSerial(raw);
+        document.getElementById('serial').textContent = '読取完了: ' + formatted;
+        
+        handleComplete(formatted);
+    })
+    .catch(err => {
+        document.getElementById('status').textContent = 'エラー: ' + err;
+    });
+
+    // ライトチェック
+    setTimeout(() => {
+        try{
+             const track = vid.srcObject.getVideoTracks()[0];
+             if(track && track.getCapabilities().torch){
+                 streamTrack = track;
+                 document.getElementById('btnTorch').style.display = 'inline-block';
+             }
+        }catch(e){}
+    }, 600);
+}
+
+/* === 3. データ送信処理 === */
+async function handleComplete(serial){
+    cleanupStream();
+    switchView('view-sending');
+
+    // ★画像がある場合のみGASへ送信
+    if(capturedImageBase64){
+        document.getElementById('msgSending').textContent = "送信中...";
+        document.getElementById('msgDetail').textContent = "写真をアップロードしています";
+        
+        if(GAS_API_URL && GAS_API_URL.startsWith("https")){
+            try {
+                await fetch(GAS_API_URL, {
+                    method: "POST",
+                    body: JSON.stringify({
+                        image: capturedImageBase64,
+                        filename: serial,
+                        inspector: inspector
+                    })
+                });
+            } catch(e) {
+                console.error("Upload failed", e);
+                alert("写真のアップロードに失敗しましたが、フォームへ進みます。");
+            }
+        } else {
+            alert("GASのURLが設定されていません。写真は保存されません。");
+        }
+    } else {
+        // ★写真がない場合はメッセージだけ変えてすぐ次へ
+        document.getElementById('msgSending').textContent = "処理完了";
+        document.getElementById('msgDetail').textContent = "フォームを開きます...";
+        await new Promise(r => setTimeout(r, 500)); // 一瞬待つ
+    }
+
+    // 履歴保存 & フォームを開く
+    saveHistory(serial);
+    openForm(serial);
+    
+    setTimeout(() => {
+        location.reload();
+    }, 1000);
+}
+
+/* === 既存の補助関数 === */
+function openForm(serial){
+  const url = `${FORM_URL_BASE}?usp=pp_url&${ENTRY_SERIAL}=${encodeURIComponent(serial)}&${ENTRY_INSPECT}=${encodeURIComponent(inspector)}`;
+  const win = window.open(url, '_blank');
+  if(!win){ 
+      alert('送信完了。フォームを開きます。\n(ポップアップがブロックされた場合は手動で開いてください)');
+      location.href = url;
+  }
+}
+
+function resetToTop(){
+    cleanupStream();
+    location.reload();
+}
+
+function cleanupStream(){
+    try{ codeReader && codeReader.reset(); }catch(e){}
+    try{
+        const v = document.getElementById('cameraVideo');
+        if(v.srcObject) v.srcObject.getTracks().forEach(t=>t.stop());
+    }catch(e){}
+    try{
+        const v = document.getElementById('scannerVideo');
+        if(v.srcObject) v.srcObject.getTracks().forEach(t=>t.stop());
+    }catch(e){}
+}
+
+/* ... データ読み込み、履歴、パースロジック ... */
+function saveHistory(serial){
+  const hist = JSON.parse(localStorage.getItem('history')||'[]');
+  hist.unshift({time:new Date().toLocaleString(), serial, inspector});
+  localStorage.setItem('history', JSON.stringify(hist.slice(0,500)));
+}
+function showHistory(){ window.open("https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/edit?gid=811114478#gid=811114478", "_blank"); }
+function openDashboard(){ window.open(DASHBOARD_URL, "_blank"); }
+function openPastHistory(){ window.open(PAST_HISTORY_URL, "_blank"); }
+function manualEntry(){ openForm(''); }
+function onTorchClick(){
+  if(streamTrack){
+    const s = streamTrack.getSettings();
+    streamTrack.applyConstraints({advanced:[{torch:!s.torch}]});
+  }
+}
+async function loadData(){
+  try{
+    const res = await fetch(COUNTS_CSV_URL, {cache:"no-store"});
+    if(res.ok){
+       const r = (await res.text()).trim().split(/\r?\n/).map(x=>x.replace(/^"|"$|,/g,"").trim());
+       document.getElementById("planCount").textContent=r[0]||0;
+       document.getElementById("doneCount").textContent=r[1]||0;
+       document.getElementById("remainCount").textContent=r[2]||Math.max(0,(r[0]||0)-(r[1]||0));
+    }
+    const nRes = await fetch(NEWS_CSV_URL, {cache:"no-store"});
+    if(nRes.ok){
+       const rows = (await nRes.text()).trim().split(/\r?\n/).map(x=>x.replace(/^"|"$|,/g,"").trim()).filter(x=>x);
+       if(rows.length){
+           document.getElementById("newsText").innerHTML = '<ul>' + rows.map(x=>`<li>${x}</li>`).join('') + '</ul>';
+           document.getElementById("newsArea").style.display='block';
+       }
+    }
+  }catch(e){}
+}
+window.addEventListener("load", loadData);
+
+function yearDigitsToLetter(yyStr){
+  const yy = Number(String(yyStr).replace(/\D/g, ''));
+  if (!Number.isFinite(yy)) return '?';
+  const baseIdx = 'H'.charCodeAt(0) - 'A'.charCodeAt(0);
+  const idx = ((yy - 20) % 26 + 26) % 26;
+  return String.fromCharCode('A'.charCodeAt(0) + ((baseIdx + idx) % 26));
+}
+function parseSerial(t){
+  if (t == null) return t;
+  t = String(t).trim();
+  const head = t[0]?.toUpperCase() || '';
+  const yyDigits = t.length >= 6 ? t.slice(4, 6) : '';
+  const yearLetter = yearDigitsToLetter(yyDigits);
+  const tail6 = (t.match(/(\d{6})$/) || [,''])[1] || '';
+  const makerMatch = /^[PMCK].([A-Z]{2})/i.exec(t);
+  const maker = makerMatch ? makerMatch[1].toUpperCase() : '';
+  if (head === 'P' || head === 'M'){
+    if (maker && yearLetter !== '?' && tail6){
+      const prefix = (head === 'M') ? 'M' : '';
+      return `${maker}-${yearLetter} ${prefix}${tail6}`;
+    }
+    return t; 
+  }
+  if (head === 'C' || head === 'K'){
+    if (/[0321]/.test(t[1] || '') && maker && yearLetter !== '?' && tail6){
+      return `${maker}-${yearLetter} ${head}${tail6}`;
+    }
+    return t; 
+  }
+  return t;
+}
+</script>
+</body>
+</html>
