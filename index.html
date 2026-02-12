@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>点検アプリ（完成版）</title>
+  <title>点検アプリ（複数枚撮影対応）</title>
   <link rel="icon" type="image/png" href="アプリロゴ.png">
   <link rel="apple-touch-icon" href="アプリロゴ.png">
   <meta name="theme-color" content="#007bff">
@@ -28,8 +28,17 @@
     .view-section { display:none; }
     .view-section.active { display:block; }
 
-    /* 写真プレビュー */
-    #photoPreview { width:100%; border-radius:10px; margin-bottom:10px; border:2px solid #ccc; display:none;}
+    /* サムネイルリスト */
+    #previewList {
+        display: flex; gap: 5px; overflow-x: auto; padding: 5px 0; margin-bottom: 10px; min-height: 60px;
+        border: 2px dashed #ccc; border-radius: 8px; justify-content: flex-start; align-items: center;
+    }
+    .thumb-wrap { position: relative; flex-shrink: 0; }
+    .thumb { height: 60px; width: auto; border-radius: 5px; border: 1px solid #ddd; }
+    .thumb-badge { 
+        position: absolute; top: -5px; right: -5px; background: red; color: white; 
+        border-radius: 50%; width: 18px; height: 18px; font-size: 12px; line-height: 18px; text-align: center;
+    }
 
     /* お知らせ欄 */
     .news-box {
@@ -70,7 +79,6 @@
     <div style="margin-top:8px;">
         <button class="btn info" style="width:100%;" onclick="openPastHistory()">📂 過去の履歴</button>
     </div>
-
     <div style="margin-top:8px;">
         <button class="btn drive" style="width:100%;" onclick="openPhotoFolder()">📷 保存された写真を見る</button>
     </div>
@@ -86,17 +94,23 @@
     <div class="card" style="text-align:center;">
         <h3>① トップユニット装着済の遊技台を撮影</h3>
         
+        <div id="previewList">
+            <span style="width:100%; text-align:center; color:#999; font-size:12px; line-height:60px;">写真はまだありません</span>
+        </div>
+
         <video id="cameraVideo" autoplay playsinline></video>
-        <img id="photoPreview" />
         <canvas id="cameraCanvas"></canvas>
         
         <div style="margin-top:10px;">
             <button id="btnShutter" class="btn" onclick="takePhoto()">📷 撮影する</button>
             
-            <button id="btnSkip" class="btn sub" style="background:#17a2b8;" onclick="skipPhoto()">⏭️ QRコード読込へ</button>
-
-            <button id="btnRetake" class="btn sub" style="display:none;" onclick="retakePhoto()">撮り直す</button>
-            <button id="btnNextScan" class="btn ok" style="display:none;" onclick="goToScan()">次へ進む</button>
+            <button id="btnNext" class="btn ok" style="display:none;" onclick="goToScan()">写真を送る（QRへ）</button>
+            
+            <button id="btnSkip" class="btn sub" style="background:#17a2b8;" onclick="skipPhoto()">写真なしでQRへ</button>
+        </div>
+        
+        <div style="margin-top:10px;">
+             <button id="btnResetPhotos" class="btn sub" style="display:none; font-size:12px;" onclick="resetPhotos()">🗑️ 全て撮り直す</button>
         </div>
         
         <div style="margin-top:15px; border-top:1px solid #eee; padding-top:10px;">
@@ -122,17 +136,14 @@
 <div id="view-sending" class="view-section">
     <div class="card" style="text-align:center; padding:40px;">
         <h2 id="msgSending">処理中...</h2>
-        <p id="msgDetail">データを処理しています。<br>画面を閉じないでください。</p>
+        <p id="msgDetail">準備中...</p>
         <div style="font-size:30px;">⏳</div>
     </div>
 </div>
 
 <script>
 /** ====== 設定 ====== */
-// GASウェブアプリURL
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzXAahoozZAc92FjMxVZ5RVAx6iWCeBLSpnQUYBRgAg6w7LlDwUxze6Rm7aV5yPc7DKMg/exec";
-
-// 写真フォルダURL
 const PHOTO_FOLDER_URL = "https://drive.google.com/drive/u/0/folders/1Z1q480XPFBFBoIpdFvbn4K4yto9r_jOA";
 
 const FORM_URL_BASE = "https://docs.google.com/forms/d/e/1FAIpQLSchpdG2NLN2uV5yAxyZC-k_xhFyem_KQDrhNmTMEGJGnsu13A/viewform";
@@ -149,11 +160,13 @@ const PAST_HISTORY_URL = "https://docs.google.com/spreadsheets/d/1w75zFfpDTkZ2ru
 let inspector='';
 let codeReader;
 let streamTrack=null;
-let capturedImageBase64 = null; 
+let capturedImages = []; // ★複数枚保存用の配列
 
 /* === 1. 撮影フロー開始 === */
 function startFlow(name){
     inspector = name;
+    capturedImages = []; // リセット
+    updatePreview();
     switchView('view-camera');
     startCamera(); 
 }
@@ -168,13 +181,12 @@ function switchView(id){
 async function startCamera(){
     const video = document.getElementById('cameraVideo');
     video.style.display = 'block';
-    document.getElementById('photoPreview').style.display = 'none';
     
     // ボタン初期化
     document.getElementById('btnShutter').style.display = 'inline-block';
     document.getElementById('btnSkip').style.display = 'inline-block';
-    document.getElementById('btnRetake').style.display = 'none';
-    document.getElementById('btnNextScan').style.display = 'none';
+    document.getElementById('btnNext').style.display = 'none';
+    document.getElementById('btnResetPhotos').style.display = 'none';
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -196,28 +208,50 @@ function takePhoto(){
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    capturedImageBase64 = canvas.toDataURL('image/jpeg', 0.8);
+    // 配列に追加
+    const imgData = canvas.toDataURL('image/jpeg', 0.8);
+    capturedImages.push(imgData);
     
-    const preview = document.getElementById('photoPreview');
-    preview.src = capturedImageBase64;
-    preview.style.display = 'block';
-    video.style.display = 'none';
+    // UI更新
+    updatePreview();
     
-    document.getElementById('btnShutter').style.display = 'none';
-    document.getElementById('btnSkip').style.display = 'none';
-    document.getElementById('btnRetake').style.display = 'inline-block';
-    document.getElementById('btnNextScan').style.display = 'inline-block';
-    
-    if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    // ボタン表示切り替え
+    if(capturedImages.length > 0){
+        document.getElementById('btnSkip').style.display = 'none'; // 写真があるのでスキップボタンは消す
+        document.getElementById('btnNext').style.display = 'inline-block'; // 「送る」ボタンを出す
+        document.getElementById('btnNext').textContent = `写真を送る (${capturedImages.length}枚)`;
+        document.getElementById('btnResetPhotos').style.display = 'inline-block';
+    }
 }
 
-function retakePhoto(){
-    capturedImageBase64 = null;
-    startCamera(); 
+// サムネイル表示更新
+function updatePreview(){
+    const list = document.getElementById('previewList');
+    list.innerHTML = '';
+    if(capturedImages.length === 0){
+        list.innerHTML = '<span style="width:100%; text-align:center; color:#999; font-size:12px; line-height:60px;">写真はまだありません</span>';
+        return;
+    }
+    capturedImages.forEach((img, idx) => {
+        const div = document.createElement('div');
+        div.className = 'thumb-wrap';
+        div.innerHTML = `<img src="${img}" class="thumb"><div class="thumb-badge">${idx+1}</div>`;
+        list.appendChild(div);
+    });
+}
+
+function resetPhotos(){
+    if(confirm('撮影した写真をすべて削除して撮り直しますか？')){
+        capturedImages = [];
+        updatePreview();
+        document.getElementById('btnNext').style.display = 'none';
+        document.getElementById('btnSkip').style.display = 'inline-block';
+        document.getElementById('btnResetPhotos').style.display = 'none';
+    }
 }
 
 function skipPhoto(){
-    capturedImageBase64 = null; 
+    capturedImages = []; 
     goToScan();
 }
 
@@ -240,7 +274,6 @@ function startScanProcess(){
         const raw = res.getText();
         const formatted = parseSerial(raw);
         document.getElementById('serial').textContent = '読取完了: ' + formatted;
-        
         handleComplete(formatted);
     })
     .catch(err => {
@@ -258,31 +291,40 @@ function startScanProcess(){
     }, 600);
 }
 
-/* === 3. データ送信処理 === */
+/* === 3. データ送信処理（複数枚対応） === */
 async function handleComplete(serial){
     cleanupStream();
     switchView('view-sending');
 
-    if(capturedImageBase64){
-        document.getElementById('msgSending').textContent = "送信中...";
-        document.getElementById('msgDetail').textContent = "写真をアップロードしています";
-        
+    // ★複数枚ループ送信
+    if(capturedImages.length > 0){
         if(GAS_API_URL && GAS_API_URL.startsWith("https")){
             try {
-                // ★ここを変更：ファイル名に担当者名を結合
-                const finalFileName = inspector + '_' + serial;
+                // 1枚ずつ順番に送信
+                for (let i = 0; i < capturedImages.length; i++) {
+                    const currentCount = i + 1;
+                    const total = capturedImages.length;
+                    
+                    // 画面メッセージ更新
+                    document.getElementById('msgSending').textContent = `送信中 (${currentCount}/${total})`;
+                    document.getElementById('msgDetail').textContent = `${currentCount}枚目の写真をアップロードしています...`;
 
-                await fetch(GAS_API_URL, {
-                    method: "POST",
-                    body: JSON.stringify({
-                        image: capturedImageBase64,
-                        filename: finalFileName, // 担当者_製造番号
-                        inspector: inspector
-                    })
-                });
+                    // 連番をつける: 担当_番号_1, 担当_番号_2
+                    // ※1枚だけの時は _1 をつけない方が良ければ条件分岐してください。今回は統一して _1 をつけます
+                    const finalFileName = `${inspector}_${serial}_${currentCount}`;
+
+                    await fetch(GAS_API_URL, {
+                        method: "POST",
+                        body: JSON.stringify({
+                            image: capturedImages[i],
+                            filename: finalFileName,
+                            inspector: inspector
+                        })
+                    });
+                }
             } catch(e) {
                 console.error("Upload failed", e);
-                alert("写真のアップロードに失敗しましたが、フォームへ進みます。");
+                alert("一部の写真のアップロードに失敗した可能性がありますが、フォームへ進みます。");
             }
         } else {
             alert("GASのURLが設定されていません。写真は保存されません。");
