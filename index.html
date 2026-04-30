@@ -266,7 +266,7 @@ function goToScan(){
 
 /* === QRスキャン処理 === */
 function startScanProcess(){
-    codeReader = new ZXing.BrowserMultiFormatReader();
+    codeReader = new ZXing.BrowserQRCodeReader();
     const vid = document.getElementById('scannerVideo');
     
     codeReader.decodeOnceFromConstraints({ video:{ facingMode:'environment' } }, vid)
