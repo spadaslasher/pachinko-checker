@@ -6,276 +6,140 @@
   <title>点検アプリ（複数枚撮影対応）</title>
   <link rel="icon" type="image/png" href="アプリロゴ.png">
   <link rel="apple-touch-icon" href="アプリロゴ.png">
-  <meta name="theme-color" content="#2563eb">
-  <!-- バージョンを固定（@latest だと勝手に更新されて動かなくなる恐れがあるため） -->
-  <script src="https://unpkg.com/@zxing/library@0.21.3"></script>
+  <meta name="theme-color" content="#007bff">
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    :root{
-      --brand:#2563eb; --brand-2:#4f46e5;
-      --ok:#16a34a; --danger:#dc2626; --info:#0891b2; --drive:#7c3aed;
-      --bg:#f1f5f9; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0;
-      --radius:18px;
-      --shadow:0 1px 2px rgba(15,23,42,.04), 0 10px 28px rgba(15,23,42,.07);
-    }
-    *{box-sizing:border-box}
-    html,body{margin:0}
-    body{
-      font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-      background:var(--bg); color:var(--text); text-align:center; padding-bottom:32px;
-      -webkit-tap-highlight-color:transparent; -webkit-font-smoothing:antialiased;
-    }
-    button{font-family:inherit;cursor:pointer}
+    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; --info:#17a2b8; --drive:#6f42c1; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;text-align:center;padding:16px}
+    h1{margin:8px 0 12px;color:#222}
+    .btn{margin:6px;padding:12px 20px;font-size:16px;border:none;border-radius:10px;background:var(--brand);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+    .btn:active{transform:translateY(1px)}
+    .btn.sub{background:#6c757d; padding:8px 16px; font-size:14px;}
+    .btn.info{background:var(--info)}
+    .btn.drive{background:var(--drive)}
+    .card{max-width:480px;margin:8px auto;background:#fff;border-radius:12px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:left}
 
-    /* ===== ヘッダー ===== */
-    .app-header{
-      background:linear-gradient(135deg,var(--brand) 0%,var(--brand-2) 100%);
-      color:#fff; padding:22px 16px 60px;
+    video, canvas {width:100%;max-width:480px;border-radius:10px;background:#000; display:none;}
+
+    #status{margin-top:8px;color:#c0392b; font-weight:bold;}
+    #serial{margin-top:6px;color:var(--ok);font-weight:600}
+
+    /* 画面切り替え用 */
+    .view-section { display:none; }
+    .view-section.active { display:block; }
+
+    /* サムネイルリスト */
+    #previewList {
+        display: flex; gap: 5px; overflow-x: auto; padding: 5px 0; margin-bottom: 10px; min-height: 60px;
+        border: 2px dashed #ccc; border-radius: 8px; justify-content: flex-start; align-items: center;
     }
-    .app-title{font-size:19px;font-weight:800;letter-spacing:.08em}
-    .app-sub{font-size:12px;opacity:.75;margin-top:3px;letter-spacing:.05em}
-
-    .container{max-width:480px;margin:0 auto;padding:0 14px}
-
-    /* ===== 進捗 ===== */
-    .stats{
-      display:grid;grid-template-columns:repeat(3,1fr);
-      margin-top:-44px;background:var(--card);border-radius:var(--radius);
-      box-shadow:var(--shadow);padding:14px 4px;
-    }
-    .stat + .stat{border-left:1px solid var(--line)}
-    .stat-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.1em}
-    .stat-value{font-size:26px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums;line-height:1.2}
-    .stat.done .stat-value{color:var(--ok)}
-    .stat.remain .stat-value{color:var(--brand)}
-
-    /* ===== カード ===== */
-    .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 16px;margin-top:14px;text-align:left}
-    .card.center{text-align:center}
-    .section-title{font-size:13px;font-weight:800;color:var(--muted);letter-spacing:.1em;margin:0 0 12px}
-    .step-title{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:800;margin:0 0 14px;line-height:1.4}
-    .step-num{
-      flex-shrink:0;width:28px;height:28px;border-radius:50%;
-      background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
-      font-size:14px;display:inline-flex;align-items:center;justify-content:center;
+    .thumb-wrap { position: relative; flex-shrink: 0; }
+    .thumb { height: 60px; width: auto; border-radius: 5px; border: 1px solid #ddd; }
+    .thumb-badge {
+        position: absolute; top: -5px; right: -5px; background: red; color: white;
+        border-radius: 50%; width: 18px; height: 18px; font-size: 12px; line-height: 18px; text-align: center;
     }
 
-    /* ===== 点検者選択 ===== */
-    .inspector-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-    .inspector-btn{
-      padding:18px 4px;font-size:17px;font-weight:800;color:var(--text);
-      background:#f8fafc;border:1.5px solid var(--line);border-radius:14px;
-      transition:transform .1s, background .15s, color .15s, border-color .15s;
+    /* お知らせ欄 */
+    .news-box {
+      background-color: #fff3cd; border-left: 5px solid #ffc107;
+      padding: 10px; margin-top: 15px; text-align: left; border-radius: 4px; display: none;
     }
-    .inspector-btn:active{transform:scale(.96);background:var(--brand);color:#fff;border-color:var(--brand)}
-
-    /* ===== メニュー ===== */
-    .menu-list{display:grid;gap:8px}
-    .menu-item{
-      display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;
-      background:#fff;border:1.5px solid var(--line);border-radius:14px;
-      font-size:15px;font-weight:700;color:var(--text);text-align:left;
-      transition:transform .1s, background .15s;
-    }
-    .menu-item:active{transform:scale(.98);background:#f8fafc}
-    .menu-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
-    .menu-icon.gray{background:#f1f5f9}
-    .menu-icon.red{background:#fee2e2}
-    .menu-icon.cyan{background:#cffafe}
-    .menu-icon.purple{background:#ede9fe}
-    .menu-chev{margin-left:auto;color:#cbd5e1;font-size:20px;font-weight:400}
-
-    /* ===== ボタン ===== */
-    .btn{
-      display:inline-block;margin:5px;padding:13px 22px;font-size:15px;font-weight:800;
-      border:none;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
-      box-shadow:0 6px 16px rgba(37,99,235,.28);transition:transform .1s, filter .15s;
-    }
-    .btn:active{transform:scale(.97);filter:brightness(.95)}
-    .btn.lg{padding:16px 30px;font-size:17px}
-    .btn.sub{background:#fff;color:var(--text);border:1.5px solid var(--line);box-shadow:none;padding:10px 16px;font-size:14px}
-    .btn.ok{background:linear-gradient(135deg,#22c55e,var(--ok));box-shadow:0 6px 16px rgba(22,163,74,.28)}
-    .btn.skip{background:#e0f2fe;color:#0369a1;box-shadow:none}
-    .btn.ghost{background:transparent;color:var(--muted);box-shadow:none;font-weight:700;font-size:14px;padding:10px 16px}
-    .btn.danger-ghost{background:transparent;color:var(--danger);box-shadow:none;font-weight:700;font-size:13px;padding:8px 14px}
-    .btn.torch-on{background:#fbbf24;color:#422006;border-color:#fbbf24}
-
-    .actions{margin-top:14px}
-    .footer-actions{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
-
-    /* ===== カメラ ===== */
-    video, canvas{width:100%;max-width:480px;border-radius:14px;background:#0f172a;display:none}
-    .cam-tools{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:4px;margin:4px 0 8px}
-    .zoom-wrap{
-      display:none;align-items:center;gap:8px;font-size:14px;color:var(--muted);
-      background:#f8fafc;border:1.5px solid var(--line);border-radius:14px;padding:6px 12px;margin:5px;
-    }
-    .zoom-wrap input{width:130px;accent-color:var(--brand)}
-    .torch-note{display:none;font-size:12px;color:var(--muted);width:100%;text-align:center;margin-top:2px}
-
-    /* QR読み取り枠 */
-    .scan-wrap{position:relative;max-width:480px;margin:0 auto;border-radius:14px;overflow:hidden;background:#0f172a}
-    .scan-wrap video{border-radius:0}
-    .scan-frame{
-      position:absolute;top:50%;left:50%;width:70%;aspect-ratio:1/1;transform:translate(-50%,-50%);
-      border:3px solid rgba(255,255,255,.95);border-radius:18px;
-      box-shadow:0 0 0 9999px rgba(15,23,42,.35);pointer-events:none;
-      animation:pulse 2s ease-in-out infinite;
-    }
-    @keyframes pulse{0%,100%{border-color:rgba(255,255,255,.95)}50%{border-color:rgba(96,165,250,.95)}}
-
-    #status{margin-top:12px;font-size:14px;font-weight:700;color:var(--muted);text-align:center}
-    #serial{margin-top:6px;font-size:15px;color:var(--ok);font-weight:800;text-align:center}
-
-    /* ===== 画面切り替え用 ===== */
-    .view-section{display:none}
-    .view-section.active{display:block;animation:fadein .25s ease}
-    @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-
-    /* ===== サムネイルリスト ===== */
-    #previewList{
-      display:flex;gap:10px;overflow-x:auto;padding:10px;margin-bottom:12px;min-height:84px;
-      background:#f8fafc;border:2px dashed var(--line);border-radius:14px;
-      justify-content:flex-start;align-items:center;
-    }
-    .thumb-wrap{position:relative;flex-shrink:0}
-    .thumb{height:60px;width:auto;border-radius:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(15,23,42,.15);display:block}
-    .thumb-badge{
-      position:absolute;top:-6px;right:-6px;background:var(--brand);color:#fff;
-      border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:800;line-height:20px;text-align:center;
-      box-shadow:0 0 0 2px #fff;
-    }
-
-    /* ===== お知らせ欄 ===== */
-    .news-box{
-      display:none;margin-top:14px;padding:14px 16px;text-align:left;
-      background:#fffbeb;border:1.5px solid #fde68a;border-radius:var(--radius);
-    }
-    .news-title{font-weight:800;color:#92400e;font-size:13px;letter-spacing:.05em;margin-bottom:6px}
-    .news-content ul{padding-left:20px;margin:0}
-    .news-content li{margin-bottom:4px;font-size:14px;color:#78350f;line-height:1.5}
-
-    /* ===== 送信中 ===== */
-    .sending-card{padding:44px 20px}
-    .spinner{
-      width:52px;height:52px;margin:0 auto 18px;border-radius:50%;
-      border:5px solid var(--line);border-top-color:var(--brand);
-      animation:spin .9s linear infinite;
-    }
-    @keyframes spin{to{transform:rotate(360deg)}}
-    #msgSending{font-size:20px;margin:0 0 6px}
-    #msgDetail{color:var(--muted);font-size:14px;margin:0}
+    .news-title { font-weight:bold; color:#856404; font-size:14px; margin-bottom:6px; border-bottom:1px solid rgba(0,0,0,0.1); padding-bottom:4px;}
+    .news-content ul { padding-left: 20px; margin: 0; }
+    .news-content li { margin-bottom: 4px; font-size:14px;}
   </style>
 </head>
 <body>
 
-<header class="app-header">
-  <div class="app-title">点検アプリ</div>
-  <div class="app-sub">遊技台 点検確認</div>
-</header>
-
-<div class="container">
-
-<div id="summaryCard" class="stats">
-  <div class="stat"><div class="stat-label">予定</div><div class="stat-value" id="planCount">-</div></div>
-  <div class="stat done"><div class="stat-label">完了</div><div class="stat-value" id="doneCount">-</div></div>
-  <div class="stat remain"><div class="stat-label">残り</div><div class="stat-value" id="remainCount">-</div></div>
+<div id="summaryCard" class="card" style="text-align:center; margin-bottom:12px;">
+  <h2>点検進捗</h2>
+  <p>予定: <span id="planCount">-</span> / 完了: <span id="doneCount">-</span> / 残: <span id="remainCount">-</span></p>
 </div>
 
 <div id="view-top" class="view-section active">
-  <div id="newsArea" class="news-box">
-      <div class="news-title">📢 お知らせ</div>
-      <div id="newsText" class="news-content"></div>
-  </div>
-
-  <div class="card">
-    <h1 class="section-title">点検者を選択</h1>
-    <div class="inspector-grid">
-        <button class="inspector-btn" onclick="startFlow('羽染')">羽染</button>
-        <button class="inspector-btn" onclick="startFlow('梅原')">梅原</button>
-        <button class="inspector-btn" onclick="startFlow('明田川')">明田川</button>
-        <button class="inspector-btn" onclick="startFlow('山口')">山口</button>
-        <button class="inspector-btn" onclick="startFlow('佐藤')">佐藤</button>
-        <button class="inspector-btn" onclick="startFlow('髙橋')">髙橋</button>
-        <button class="inspector-btn" onclick="startFlow('今野')">今野</button>
+  <h1>点検者を選択</h1>
+  <div class="card" style="text-align:center">
+    <div>
+        <button class="btn" onclick="startFlow('羽染')">羽染</button>
+        <button class="btn" onclick="startFlow('梅原')">梅原</button>
+        <button class="btn" onclick="startFlow('明田川')">明田川</button>
+        <button class="btn" onclick="startFlow('山口')">山口</button>
+        <button class="btn" onclick="startFlow('佐藤')">佐藤</button>
+        <button class="btn" onclick="startFlow('髙橋')">髙橋</button>
+        <button class="btn" onclick="startFlow('今野')">今野</button>
     </div>
-  </div>
+    <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
 
-  <div class="card">
-    <h2 class="section-title">メニュー</h2>
-    <div class="menu-list">
-        <button class="menu-item" onclick="showHistory()"><span class="menu-icon gray">🕘</span>履歴<span class="menu-chev">›</span></button>
-        <button class="menu-item" onclick="openDashboard()"><span class="menu-icon red">📮</span>未送信<span class="menu-chev">›</span></button>
-        <button class="menu-item" onclick="openPastHistory()"><span class="menu-icon cyan">📂</span>過去の履歴<span class="menu-chev">›</span></button>
-        <button class="menu-item" onclick="openPhotoFolder()"><span class="menu-icon purple">📷</span>保存された写真を見る<span class="menu-chev">›</span></button>
+    <div style="display:flex; justify-content:center; gap:8px;">
+        <button class="btn sub" style="flex:1;" onclick="showHistory()">履歴</button>
+        <button class="btn sub" style="flex:1;" onclick="openDashboard()">未送信</button>
+    </div>
+
+    <div style="margin-top:8px;">
+        <button class="btn info" style="width:100%;" onclick="openPastHistory()">📂 過去の履歴</button>
+    </div>
+    <div style="margin-top:8px;">
+        <button class="btn drive" style="width:100%;" onclick="openPhotoFolder()">📷 保存された写真を見る</button>
+    </div>
+
+    <div id="newsArea" class="news-box">
+        <div class="news-title">📢 お知らせ</div>
+        <div id="newsText" class="news-content"></div>
     </div>
   </div>
 </div>
 
 <div id="view-camera" class="view-section">
-    <div class="card center">
-        <h3 class="step-title"><span class="step-num">1</span>トップユニット装着済の遊技台を撮影</h3>
+    <div class="card" style="text-align:center;">
+        <h3>① トップユニット装着済の遊技台を撮影</h3>
 
         <div id="previewList">
             <span style="width:100%; text-align:center; color:#999; font-size:12px; line-height:60px;">写真はまだありません</span>
         </div>
 
-        <div class="cam-tools">
-            <button id="camTorch" class="btn sub" style="display:none" onclick="toggleTorch()">🔦 ライト ON</button>
-            <label id="camZoomWrap" class="zoom-wrap">🔍 <input type="range" id="camZoom" oninput="setZoom(this.value)"></label>
-            <div id="camTorchNote" class="torch-note">※この端末・ブラウザではアプリからライトを操作できません</div>
-        </div>
-
-        <video id="cameraVideo" autoplay playsinline muted></video>
+        <video id="cameraVideo" autoplay playsinline></video>
         <canvas id="cameraCanvas"></canvas>
 
-        <div class="actions">
-            <button id="btnShutter" class="btn lg" onclick="takePhoto()">📷 撮影する</button>
-            <button id="btnNext" class="btn ok lg" style="display:none;" onclick="goToScan()">写真を送る（QRへ）</button>
-            <button id="btnSkip" class="btn skip" onclick="skipPhoto()">写真なしでQRへ</button>
+        <div style="margin-top:10px;">
+            <button id="btnShutter" class="btn" onclick="takePhoto()">📷 撮影する</button>
+
+            <button id="btnNext" class="btn ok" style="display:none;" onclick="goToScan()">写真を送る（QRへ）</button>
+
+            <button id="btnSkip" class="btn sub" style="background:#17a2b8;" onclick="skipPhoto()">写真なしでQRへ</button>
         </div>
 
-        <div>
-             <button id="btnResetPhotos" class="btn danger-ghost" style="display:none;" onclick="resetPhotos()">🗑️ 全て撮り直す</button>
+        <div style="margin-top:10px;">
+             <button id="btnResetPhotos" class="btn sub" style="display:none; font-size:12px;" onclick="resetPhotos()">🗑️ 全て撮り直す</button>
         </div>
 
-        <div class="footer-actions">
-            <button class="btn ghost" onclick="resetToTop()">中止して戻る</button>
+        <div style="margin-top:15px; border-top:1px solid #eee; padding-top:10px;">
+            <button class="btn sub" style="background:#999;" onclick="resetToTop()">中止して戻る</button>
         </div>
     </div>
 </div>
 
 <div id="view-scan" class="view-section">
-  <div class="card center">
-    <h3 class="step-title"><span class="step-num">2</span>QRをスキャン</h3>
-    <div class="cam-tools">
-      <button id="scanTorch" class="btn sub" style="display:none" onclick="toggleTorch()">🔦 ライト ON</button>
-      <button class="btn sub" onclick="manualEntry()">⌨️ 手入力</button>
-      <label id="scanZoomWrap" class="zoom-wrap">🔍 <input type="range" id="scanZoom" oninput="setZoom(this.value)"></label>
-      <div id="scanTorchNote" class="torch-note">※この端末・ブラウザではアプリからライトを操作できません</div>
+  <div class="card">
+    <h3>② QRをスキャン</h3>
+    <div class="toolbar" style="justify-content:center;">
+      <button id="btnTorch" class="btn sub" style="display:none" onclick="onTorchClick()">🔦 ライト</button>
+      <button class="btn sub" onclick="manualEntry()">手入力</button>
     </div>
 
-    <div class="scan-wrap">
-      <video id="scannerVideo" autoplay playsinline muted style="display:block;"></video>
-      <div class="scan-frame"></div>
-    </div>
-    <canvas id="scanCanvas" style="display:none"></canvas>
+    <video id="scannerVideo" autoplay playsinline style="display:block;"></video>
     <div id="status">QRコードをかざしてください…</div>
     <div id="serial"></div>
-    <div class="footer-actions">
-      <button class="btn ghost" onclick="resetToTop()">中止して戻る</button>
-    </div>
   </div>
 </div>
 
 <div id="view-sending" class="view-section">
-    <div class="card center sending-card">
-        <div class="spinner"></div>
+    <div class="card" style="text-align:center; padding:40px;">
         <h2 id="msgSending">処理中...</h2>
         <p id="msgDetail">準備中...</p>
+        <div style="font-size:30px;">⏳</div>
     </div>
 </div>
-
-</div><!-- /.container -->
 
 <script>
 /** ====== 設定 ====== */
@@ -292,22 +156,11 @@ const COUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSi
 const NEWS_CSV_URL   = "https://docs.google.com/spreadsheets/d/1YgPxoZnkJO402iSigrX893vd1ExJEPJobu7-_GzpW0w/export?format=csv&gid=1607150139&range=A1:A5";
 const PAST_HISTORY_URL = "https://docs.google.com/spreadsheets/d/1w75zFfpDTkZ2ruyQz1g5f8_cnTe_SnIBCqKkOTuy9yc/edit?usp=drive_link";
 
-/* 写真の最大サイズ（長辺px）。大きすぎると送信が遅くなる */
-const PHOTO_MAX_SIDE = 1920;
-/* ライト付きカメラの記憶用キー（端末ごとに一度だけ探す） */
-const CAMERA_ID_KEY = 'torchCameraId';
-
 /** 変数 */
 let inspector='';
+let codeReader;
+let streamTrack=null;
 let capturedImages = []; // ★複数枚保存用の配列
-
-let currentStream = null;  // 撮影・スキャンで共通のカメラ
-let currentTrack  = null;
-let torchOn = false;
-let scanning = false;
-let scanTimer = null;
-let scanFrameCount = 0;
-let zxingReader = null;
 
 /* === 1. 撮影フロー開始 === */
 function startFlow(name){
@@ -324,140 +177,7 @@ function switchView(id){
     document.getElementById(id).classList.add('active');
 }
 
-/* ================================================================
-   カメラ共通処理（背面カメラを高解像度で開く・ライト付きカメラを探す）
-   ================================================================ */
-function getCaps(track){
-    try { return (track && track.getCapabilities) ? track.getCapabilities() : {}; }
-    catch(e){ return {}; }
-}
-function hasTorch(track){ return !!getCaps(track).torch; }
-
-const VIDEO_BASE = { width:{ ideal:1920 }, height:{ ideal:1080 } };
-
-async function getStream(extra){
-    return navigator.mediaDevices.getUserMedia({ audio:false, video:{ ...VIDEO_BASE, ...extra } });
-}
-
-/* 背面カメラが複数ある機種では、ライトの無いレンズが選ばれることがある。
-   そのときは他の背面カメラを順に試し、ライト付きのものを記憶する。 */
-async function findTorchCamera(excludeId){
-    let devices = [];
-    try { devices = await navigator.mediaDevices.enumerateDevices(); } catch(e){ return null; }
-    const backs = devices.filter(d => d.kind === 'videoinput' && d.deviceId !== excludeId &&
-                                      /back|rear|environment|背面/i.test(d.label));
-    for (const d of backs){
-        let s = null;
-        try {
-            s = await getStream({ deviceId:{ exact:d.deviceId } });
-            if (hasTorch(s.getVideoTracks()[0])) return s;
-        } catch(e){}
-        if (s) s.getTracks().forEach(t => t.stop());
-    }
-    return null;
-}
-
-async function openBackCamera(){
-    const saved = localStorage.getItem(CAMERA_ID_KEY);
-    let stream = null;
-
-    // 前回見つけたライト付きカメラを優先
-    if (saved && saved !== 'none'){
-        try { stream = await getStream({ deviceId:{ exact:saved } }); }
-        catch(e){ localStorage.removeItem(CAMERA_ID_KEY); }
-    }
-    if (!stream){
-        stream = await getStream({ facingMode:{ ideal:'environment' } });
-        const track = stream.getVideoTracks()[0];
-        if (hasTorch(track)){
-            localStorage.setItem(CAMERA_ID_KEY, track.getSettings().deviceId || 'none');
-        } else if (!saved){
-            // 初回だけ、ライト付きの背面カメラを探す
-            const id = track.getSettings().deviceId;
-            stream.getTracks().forEach(t => t.stop());   // 同時に2台開けない機種があるので一旦閉じる
-            const alt = await findTorchCamera(id);
-            if (alt){
-                stream = alt;
-                localStorage.setItem(CAMERA_ID_KEY, alt.getVideoTracks()[0].getSettings().deviceId);
-            } else {
-                stream = await getStream({ facingMode:{ ideal:'environment' } });
-                localStorage.setItem(CAMERA_ID_KEY, 'none');
-            }
-        }
-    }
-
-    currentStream = stream;
-    currentTrack  = stream.getVideoTracks()[0];
-    torchOn = false;
-
-    // ピントを合わせ続ける（対応機種のみ）
-    const caps = getCaps(currentTrack);
-    if (caps.focusMode && caps.focusMode.includes('continuous')){
-        try { await currentTrack.applyConstraints({ advanced:[{ focusMode:'continuous' }] }); } catch(e){}
-    }
-    return stream;
-}
-
-async function attachStream(videoEl){
-    if (!currentStream || !currentStream.active) await openBackCamera();
-    videoEl.srcObject = currentStream;
-    try { await videoEl.play(); } catch(e){}
-}
-
-function stopCamera(){
-    if (currentStream) currentStream.getTracks().forEach(t => t.stop());
-    currentStream = null; currentTrack = null; torchOn = false;
-    ['cameraVideo','scannerVideo'].forEach(id => { document.getElementById(id).srcObject = null; });
-}
-
-/* ライト・ズームのボタン表示を更新（prefix: 'cam' or 'scan'） */
-function updateCameraControls(prefix){
-    const caps = getCaps(currentTrack);
-    const btn  = document.getElementById(prefix + 'Torch');
-    const note = document.getElementById(prefix + 'TorchNote');
-    if (caps.torch){
-        btn.style.display = 'inline-block';
-        note.style.display = 'none';
-        btn.textContent = torchOn ? '🔦 ライト OFF' : '🔦 ライト ON';
-        btn.classList.toggle('torch-on', torchOn);
-    } else {
-        btn.style.display = 'none';
-        note.style.display = currentTrack ? 'block' : 'none';
-    }
-
-    const wrap = document.getElementById(prefix + 'ZoomWrap');
-    const zoom = document.getElementById(prefix + 'Zoom');
-    if (caps.zoom && caps.zoom.max > caps.zoom.min){
-        wrap.style.display = 'inline-flex';
-        zoom.min  = caps.zoom.min;
-        zoom.max  = Math.min(caps.zoom.max, caps.zoom.min * 5);   // 上げすぎると画質が荒れるので5倍まで
-        zoom.step = caps.zoom.step || 0.1;
-        zoom.value = currentTrack.getSettings().zoom || caps.zoom.min;
-    } else {
-        wrap.style.display = 'none';
-    }
-}
-
-async function toggleTorch(){
-    if (!currentTrack) return;
-    const next = !torchOn;
-    try {
-        await currentTrack.applyConstraints({ advanced:[{ torch:next }] });
-        torchOn = next;
-    } catch(e){
-        try { await currentTrack.applyConstraints({ torch:next }); torchOn = next; }
-        catch(e2){ alert('ライトを切り替えられませんでした: ' + e2.message); }
-    }
-    updateCameraControls('cam');
-    updateCameraControls('scan');
-}
-
-async function setZoom(v){
-    if (!currentTrack) return;
-    try { await currentTrack.applyConstraints({ advanced:[{ zoom:Number(v) }] }); } catch(e){}
-}
-
-/* === カメラ処理（撮影） === */
+/* === カメラ処理 === */
 async function startCamera(){
     const video = document.getElementById('cameraVideo');
     video.style.display = 'block';
@@ -469,8 +189,11 @@ async function startCamera(){
     document.getElementById('btnResetPhotos').style.display = 'none';
 
     try {
-        await attachStream(video);
-        updateCameraControls('cam');
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false
+        });
+        video.srcObject = stream;
     } catch(err) {
         alert("カメラを起動できませんでした: " + err);
     }
@@ -478,14 +201,11 @@ async function startCamera(){
 
 function takePhoto(){
     const video = document.getElementById('cameraVideo');
-    if (!video.videoWidth){ alert('カメラの準備中です。少し待ってからもう一度押してください。'); return; }
     const canvas = document.getElementById('cameraCanvas');
     const context = canvas.getContext('2d');
 
-    // 長辺を PHOTO_MAX_SIDE までに縮小（送信を速くするため）
-    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(video.videoWidth, video.videoHeight));
-    canvas.width  = Math.round(video.videoWidth  * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // 配列に追加
@@ -535,122 +255,40 @@ function skipPhoto(){
     goToScan();
 }
 
-/* === 2. QRスキャンへ進む（カメラは閉じずにそのまま使い回す） === */
+/* === 2. QRスキャンへ進む === */
 function goToScan(){
-    document.getElementById('cameraVideo').srcObject = null;
+    const video = document.getElementById('cameraVideo');
+    if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+
     switchView('view-scan');
     startScanProcess();
 }
 
-/* ================================================================
-   QRスキャン処理
-   - Android の Chrome などは端末内蔵の読み取り機能（BarcodeDetector）を使う。速くて感度が高い
-   - 使えない端末（iPhone など）は ZXing で、枠内を切り出して高精度モードで読む
-   - 読めなくても止まらず、読めるまで繰り返す
-   ================================================================ */
-async function startScanProcess(){
+/* === QRスキャン処理 === */
+function startScanProcess(){
+    codeReader = new ZXing.BrowserQRCodeReader();
     const vid = document.getElementById('scannerVideo');
-    setStatus('カメラを起動しています…');
-    try {
-        await attachStream(vid);
-    } catch(err){
-        setStatus('カメラを起動できませんでした: ' + err.message);
-        return;
-    }
-    updateCameraControls('scan');
 
-    const detector = await createNativeDetector();
-    if (!detector && typeof ZXing === 'undefined'){
-        setStatus('読み取り機能を読み込めませんでした。通信状況を確認するか「手入力」を使ってください。');
-        return;
-    }
-    setStatus('QRコードを枠の中に入れてください…');
-    scanning = true;
-    scanFrameCount = 0;
-    scanLoop(vid, detector);
-}
+    codeReader.decodeOnceFromConstraints({ video:{ facingMode:'environment' } }, vid)
+    .then(res => {
+        const raw = res.getText();
+        const formatted = parseSerial(raw);
+        document.getElementById('serial').textContent = '読取完了: ' + formatted;
+        handleComplete(formatted);
+    })
+    .catch(err => {
+        document.getElementById('status').textContent = 'エラー: ' + err;
+    });
 
-function setStatus(msg){ document.getElementById('status').textContent = msg; }
-
-async function createNativeDetector(){
-    try {
-        if ('BarcodeDetector' in window){
-            const formats = await BarcodeDetector.getSupportedFormats();
-            if (formats.includes('qr_code')) return new BarcodeDetector({ formats:['qr_code'] });
-        }
-    } catch(e){}
-    return null;
-}
-
-async function scanLoop(vid, detector){
-    if (!scanning) return;
-    let text = null;
-    if (vid.readyState >= 2 && vid.videoWidth){
-        try {
-            text = detector ? await detectNative(detector, vid) : detectZXing(vid);
-        } catch(e){}
-    }
-    if (!scanning) return;
-    if (text){
-        scanning = false;
-        onScanned(text);
-        return;
-    }
-    scanTimer = setTimeout(() => scanLoop(vid, detector), 120);
-}
-
-async function detectNative(detector, vid){
-    const codes = await detector.detect(vid);
-    return (codes && codes.length) ? codes[0].rawValue : null;
-}
-
-function getZXingReader(){
-    if (!zxingReader){
-        const hints = new Map();
-        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
-        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-        zxingReader = new ZXing.MultiFormatReader();
-        zxingReader.setHints(hints);
-    }
-    return zxingReader;
-}
-
-function detectZXing(vid){
-    const canvas = document.getElementById('scanCanvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently:true });
-    const vw = vid.videoWidth, vh = vid.videoHeight;
-    scanFrameCount++;
-
-    if (scanFrameCount % 2 === 1){
-        // 奇数回：枠の中（中央80%の正方形）を切り出して読む ← 小さいQRに強い
-        const side = Math.floor(Math.min(vw, vh) * 0.8);
-        const out  = Math.min(side, 800);
-        canvas.width = out; canvas.height = out;
-        ctx.drawImage(vid, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, out, out);
-    } else {
-        // 偶数回：画面全体を読む ← 枠からはみ出していても拾う
-        const scale = Math.min(1, 1000 / Math.max(vw, vh));
-        canvas.width = Math.round(vw * scale); canvas.height = Math.round(vh * scale);
-        ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
-    }
-
-    const reader = getZXingReader();
-    try {
-        const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
-        const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
-        return reader.decode(bmp).getText();
-    } catch(e){
-        return null;   // 見つからなかっただけ。次のフレームで再挑戦
-    } finally {
-        reader.reset();
-    }
-}
-
-function onScanned(raw){
-    try { navigator.vibrate && navigator.vibrate(100); } catch(e){}
-    const formatted = parseSerial(raw);
-    document.getElementById('serial').textContent = '読取完了: ' + formatted;
-    handleComplete(formatted);
+    setTimeout(() => {
+        try{
+             const track = vid.srcObject.getVideoTracks()[0];
+             if(track && track.getCapabilities().torch){
+                 streamTrack = track;
+                 document.getElementById('btnTorch').style.display = 'inline-block';
+             }
+        }catch(e){}
+    }, 600);
 }
 
 /* === 3. データ送信処理（複数枚対応） === */
@@ -672,6 +310,7 @@ async function handleComplete(serial){
                     document.getElementById('msgDetail').textContent = `${currentCount}枚目の写真をアップロードしています...`;
 
                     // 連番をつける: 担当_番号_1, 担当_番号_2
+                    // ※1枚だけの時は _1 をつけない方が良ければ条件分岐してください。今回は統一して _1 をつけます
                     const finalFileName = `${inspector}_${serial}_${currentCount}`;
 
                     await fetch(GAS_API_URL, {
@@ -720,9 +359,15 @@ function resetToTop(){
 }
 
 function cleanupStream(){
-    scanning = false;
-    if (scanTimer) clearTimeout(scanTimer);
-    try { stopCamera(); } catch(e){}
+    try{ codeReader && codeReader.reset(); }catch(e){}
+    try{
+        const v = document.getElementById('cameraVideo');
+        if(v.srcObject) v.srcObject.getTracks().forEach(t=>t.stop());
+    }catch(e){}
+    try{
+        const v = document.getElementById('scannerVideo');
+        if(v.srcObject) v.srcObject.getTracks().forEach(t=>t.stop());
+    }catch(e){}
 }
 
 /* ... データ読み込み、履歴、パースロジック ... */
@@ -736,7 +381,12 @@ function openDashboard(){ window.open(DASHBOARD_URL, "_blank"); }
 function openPastHistory(){ window.open(PAST_HISTORY_URL, "_blank"); }
 function openPhotoFolder(){ window.open(PHOTO_FOLDER_URL, "_blank"); }
 function manualEntry(){ openForm(''); }
-
+function onTorchClick(){
+  if(streamTrack){
+    const s = streamTrack.getSettings();
+    streamTrack.applyConstraints({advanced:[{torch:!s.torch}]});
+  }
+}
 async function loadData(){
   try{
     const res = await fetch(COUNTS_CSV_URL, {cache:"no-store"});
@@ -792,4 +442,3 @@ function parseSerial(t){
 </script>
 </body>
 </html>
-
