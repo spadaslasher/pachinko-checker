@@ -6,107 +6,214 @@
   <title>点検アプリ（複数枚撮影対応）</title>
   <link rel="icon" type="image/png" href="アプリロゴ.png">
   <link rel="apple-touch-icon" href="アプリロゴ.png">
-  <meta name="theme-color" content="#007bff">
+  <meta name="theme-color" content="#2563eb">
   <!-- バージョンを固定（@latest だと勝手に更新されて動かなくなる恐れがあるため） -->
   <script src="https://unpkg.com/@zxing/library@0.21.3"></script>
   <style>
-    :root { --brand:#007bff; --ok:#28a745; --danger:#e55353; --info:#17a2b8; --drive:#6f42c1; }
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f5f6f8;text-align:center;padding:16px}
-    h1{margin:8px 0 12px;color:#222}
-    .btn{margin:6px;padding:12px 20px;font-size:16px;border:none;border-radius:10px;background:var(--brand);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.1)}
-    .btn:active{transform:translateY(1px)}
-    .btn.sub{background:#6c757d; padding:8px 16px; font-size:14px;}
-    .btn.info{background:var(--info)}
-    .btn.drive{background:var(--drive)}
-    .btn.ok{background:var(--ok)}
-    .btn.torch-on{background:#f0ad4e;color:#222}
-    .card{max-width:480px;margin:8px auto;background:#fff;border-radius:12px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:left}
+    :root{
+      --brand:#2563eb; --brand-2:#4f46e5;
+      --ok:#16a34a; --danger:#dc2626; --info:#0891b2; --drive:#7c3aed;
+      --bg:#f1f5f9; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0;
+      --radius:18px;
+      --shadow:0 1px 2px rgba(15,23,42,.04), 0 10px 28px rgba(15,23,42,.07);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{
+      font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      background:var(--bg); color:var(--text); text-align:center; padding-bottom:32px;
+      -webkit-tap-highlight-color:transparent; -webkit-font-smoothing:antialiased;
+    }
+    button{font-family:inherit;cursor:pointer}
 
-    video, canvas {width:100%;max-width:480px;border-radius:10px;background:#000; display:none;}
+    /* ===== ヘッダー ===== */
+    .app-header{
+      background:linear-gradient(135deg,var(--brand) 0%,var(--brand-2) 100%);
+      color:#fff; padding:22px 16px 60px;
+    }
+    .app-title{font-size:19px;font-weight:800;letter-spacing:.08em}
+    .app-sub{font-size:12px;opacity:.75;margin-top:3px;letter-spacing:.05em}
 
-    #status{margin-top:8px;color:#c0392b; font-weight:bold;}
-    #serial{margin-top:6px;color:var(--ok);font-weight:600}
+    .container{max-width:480px;margin:0 auto;padding:0 14px}
 
-    /* 画面切り替え用 */
-    .view-section { display:none; }
-    .view-section.active { display:block; }
+    /* ===== 進捗 ===== */
+    .stats{
+      display:grid;grid-template-columns:repeat(3,1fr);
+      margin-top:-44px;background:var(--card);border-radius:var(--radius);
+      box-shadow:var(--shadow);padding:14px 4px;
+    }
+    .stat + .stat{border-left:1px solid var(--line)}
+    .stat-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.1em}
+    .stat-value{font-size:26px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums;line-height:1.2}
+    .stat.done .stat-value{color:var(--ok)}
+    .stat.remain .stat-value{color:var(--brand)}
 
-    /* カメラ操作（ライト・ズーム） */
-    .cam-tools{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:4px;margin:4px 0}
-    .zoom-wrap{display:none;align-items:center;gap:6px;font-size:14px;color:#444}
-    .zoom-wrap input{width:140px}
-    .torch-note{display:none;font-size:12px;color:#888;width:100%;text-align:center}
+    /* ===== カード ===== */
+    .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 16px;margin-top:14px;text-align:left}
+    .card.center{text-align:center}
+    .section-title{font-size:13px;font-weight:800;color:var(--muted);letter-spacing:.1em;margin:0 0 12px}
+    .step-title{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:800;margin:0 0 14px;line-height:1.4}
+    .step-num{
+      flex-shrink:0;width:28px;height:28px;border-radius:50%;
+      background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
+      font-size:14px;display:inline-flex;align-items:center;justify-content:center;
+    }
+
+    /* ===== 点検者選択 ===== */
+    .inspector-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .inspector-btn{
+      padding:18px 4px;font-size:17px;font-weight:800;color:var(--text);
+      background:#f8fafc;border:1.5px solid var(--line);border-radius:14px;
+      transition:transform .1s, background .15s, color .15s, border-color .15s;
+    }
+    .inspector-btn:active{transform:scale(.96);background:var(--brand);color:#fff;border-color:var(--brand)}
+
+    /* ===== メニュー ===== */
+    .menu-list{display:grid;gap:8px}
+    .menu-item{
+      display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;
+      background:#fff;border:1.5px solid var(--line);border-radius:14px;
+      font-size:15px;font-weight:700;color:var(--text);text-align:left;
+      transition:transform .1s, background .15s;
+    }
+    .menu-item:active{transform:scale(.98);background:#f8fafc}
+    .menu-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+    .menu-icon.gray{background:#f1f5f9}
+    .menu-icon.red{background:#fee2e2}
+    .menu-icon.cyan{background:#cffafe}
+    .menu-icon.purple{background:#ede9fe}
+    .menu-chev{margin-left:auto;color:#cbd5e1;font-size:20px;font-weight:400}
+
+    /* ===== ボタン ===== */
+    .btn{
+      display:inline-block;margin:5px;padding:13px 22px;font-size:15px;font-weight:800;
+      border:none;border-radius:14px;background:linear-gradient(135deg,var(--brand),var(--brand-2));color:#fff;
+      box-shadow:0 6px 16px rgba(37,99,235,.28);transition:transform .1s, filter .15s;
+    }
+    .btn:active{transform:scale(.97);filter:brightness(.95)}
+    .btn.lg{padding:16px 30px;font-size:17px}
+    .btn.sub{background:#fff;color:var(--text);border:1.5px solid var(--line);box-shadow:none;padding:10px 16px;font-size:14px}
+    .btn.ok{background:linear-gradient(135deg,#22c55e,var(--ok));box-shadow:0 6px 16px rgba(22,163,74,.28)}
+    .btn.skip{background:#e0f2fe;color:#0369a1;box-shadow:none}
+    .btn.ghost{background:transparent;color:var(--muted);box-shadow:none;font-weight:700;font-size:14px;padding:10px 16px}
+    .btn.danger-ghost{background:transparent;color:var(--danger);box-shadow:none;font-weight:700;font-size:13px;padding:8px 14px}
+    .btn.torch-on{background:#fbbf24;color:#422006;border-color:#fbbf24}
+
+    .actions{margin-top:14px}
+    .footer-actions{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+
+    /* ===== カメラ ===== */
+    video, canvas{width:100%;max-width:480px;border-radius:14px;background:#0f172a;display:none}
+    .cam-tools{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:4px;margin:4px 0 8px}
+    .zoom-wrap{
+      display:none;align-items:center;gap:8px;font-size:14px;color:var(--muted);
+      background:#f8fafc;border:1.5px solid var(--line);border-radius:14px;padding:6px 12px;margin:5px;
+    }
+    .zoom-wrap input{width:130px;accent-color:var(--brand)}
+    .torch-note{display:none;font-size:12px;color:var(--muted);width:100%;text-align:center;margin-top:2px}
 
     /* QR読み取り枠 */
-    .scan-wrap{position:relative;max-width:480px;margin:0 auto;border-radius:10px;overflow:hidden}
-    .scan-frame{position:absolute;top:50%;left:50%;width:70%;aspect-ratio:1/1;transform:translate(-50%,-50%);
-      border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.25);pointer-events:none}
+    .scan-wrap{position:relative;max-width:480px;margin:0 auto;border-radius:14px;overflow:hidden;background:#0f172a}
+    .scan-wrap video{border-radius:0}
+    .scan-frame{
+      position:absolute;top:50%;left:50%;width:70%;aspect-ratio:1/1;transform:translate(-50%,-50%);
+      border:3px solid rgba(255,255,255,.95);border-radius:18px;
+      box-shadow:0 0 0 9999px rgba(15,23,42,.35);pointer-events:none;
+      animation:pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse{0%,100%{border-color:rgba(255,255,255,.95)}50%{border-color:rgba(96,165,250,.95)}}
 
-    /* サムネイルリスト */
-    #previewList {
-        display: flex; gap: 5px; overflow-x: auto; padding: 5px 0; margin-bottom: 10px; min-height: 60px;
-        border: 2px dashed #ccc; border-radius: 8px; justify-content: flex-start; align-items: center;
+    #status{margin-top:12px;font-size:14px;font-weight:700;color:var(--muted);text-align:center}
+    #serial{margin-top:6px;font-size:15px;color:var(--ok);font-weight:800;text-align:center}
+
+    /* ===== 画面切り替え用 ===== */
+    .view-section{display:none}
+    .view-section.active{display:block;animation:fadein .25s ease}
+    @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+    /* ===== サムネイルリスト ===== */
+    #previewList{
+      display:flex;gap:10px;overflow-x:auto;padding:10px;margin-bottom:12px;min-height:84px;
+      background:#f8fafc;border:2px dashed var(--line);border-radius:14px;
+      justify-content:flex-start;align-items:center;
     }
-    .thumb-wrap { position: relative; flex-shrink: 0; }
-    .thumb { height: 60px; width: auto; border-radius: 5px; border: 1px solid #ddd; }
-    .thumb-badge {
-        position: absolute; top: -5px; right: -5px; background: red; color: white;
-        border-radius: 50%; width: 18px; height: 18px; font-size: 12px; line-height: 18px; text-align: center;
+    .thumb-wrap{position:relative;flex-shrink:0}
+    .thumb{height:60px;width:auto;border-radius:10px;border:2px solid #fff;box-shadow:0 2px 6px rgba(15,23,42,.15);display:block}
+    .thumb-badge{
+      position:absolute;top:-6px;right:-6px;background:var(--brand);color:#fff;
+      border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:800;line-height:20px;text-align:center;
+      box-shadow:0 0 0 2px #fff;
     }
 
-    /* お知らせ欄 */
-    .news-box {
-      background-color: #fff3cd; border-left: 5px solid #ffc107;
-      padding: 10px; margin-top: 15px; text-align: left; border-radius: 4px; display: none;
+    /* ===== お知らせ欄 ===== */
+    .news-box{
+      display:none;margin-top:14px;padding:14px 16px;text-align:left;
+      background:#fffbeb;border:1.5px solid #fde68a;border-radius:var(--radius);
     }
-    .news-title { font-weight:bold; color:#856404; font-size:14px; margin-bottom:6px; border-bottom:1px solid rgba(0,0,0,0.1); padding-bottom:4px;}
-    .news-content ul { padding-left: 20px; margin: 0; }
-    .news-content li { margin-bottom: 4px; font-size:14px;}
+    .news-title{font-weight:800;color:#92400e;font-size:13px;letter-spacing:.05em;margin-bottom:6px}
+    .news-content ul{padding-left:20px;margin:0}
+    .news-content li{margin-bottom:4px;font-size:14px;color:#78350f;line-height:1.5}
+
+    /* ===== 送信中 ===== */
+    .sending-card{padding:44px 20px}
+    .spinner{
+      width:52px;height:52px;margin:0 auto 18px;border-radius:50%;
+      border:5px solid var(--line);border-top-color:var(--brand);
+      animation:spin .9s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    #msgSending{font-size:20px;margin:0 0 6px}
+    #msgDetail{color:var(--muted);font-size:14px;margin:0}
   </style>
 </head>
 <body>
 
-<div id="summaryCard" class="card" style="text-align:center; margin-bottom:12px;">
-  <h2>点検進捗</h2>
-  <p>予定: <span id="planCount">-</span> / 完了: <span id="doneCount">-</span> / 残: <span id="remainCount">-</span></p>
+<header class="app-header">
+  <div class="app-title">点検アプリ</div>
+  <div class="app-sub">遊技台 点検確認</div>
+</header>
+
+<div class="container">
+
+<div id="summaryCard" class="stats">
+  <div class="stat"><div class="stat-label">予定</div><div class="stat-value" id="planCount">-</div></div>
+  <div class="stat done"><div class="stat-label">完了</div><div class="stat-value" id="doneCount">-</div></div>
+  <div class="stat remain"><div class="stat-label">残り</div><div class="stat-value" id="remainCount">-</div></div>
 </div>
 
 <div id="view-top" class="view-section active">
-  <h1>点検者を選択</h1>
-  <div class="card" style="text-align:center">
-    <div>
-        <button class="btn" onclick="startFlow('羽染')">羽染</button>
-        <button class="btn" onclick="startFlow('梅原')">梅原</button>
-        <button class="btn" onclick="startFlow('明田川')">明田川</button>
-        <button class="btn" onclick="startFlow('山口')">山口</button>
-        <button class="btn" onclick="startFlow('佐藤')">佐藤</button>
-        <button class="btn" onclick="startFlow('髙橋')">髙橋</button>
-        <button class="btn" onclick="startFlow('今野')">今野</button>
-    </div>
-    <hr style="margin: 15px 0; border: 0; border-top: 1px solid #eee;">
+  <div id="newsArea" class="news-box">
+      <div class="news-title">📢 お知らせ</div>
+      <div id="newsText" class="news-content"></div>
+  </div>
 
-    <div style="display:flex; justify-content:center; gap:8px;">
-        <button class="btn sub" style="flex:1;" onclick="showHistory()">履歴</button>
-        <button class="btn sub" style="flex:1;" onclick="openDashboard()">未送信</button>
+  <div class="card">
+    <h1 class="section-title">点検者を選択</h1>
+    <div class="inspector-grid">
+        <button class="inspector-btn" onclick="startFlow('羽染')">羽染</button>
+        <button class="inspector-btn" onclick="startFlow('梅原')">梅原</button>
+        <button class="inspector-btn" onclick="startFlow('明田川')">明田川</button>
+        <button class="inspector-btn" onclick="startFlow('山口')">山口</button>
+        <button class="inspector-btn" onclick="startFlow('佐藤')">佐藤</button>
+        <button class="inspector-btn" onclick="startFlow('髙橋')">髙橋</button>
+        <button class="inspector-btn" onclick="startFlow('今野')">今野</button>
     </div>
+  </div>
 
-    <div style="margin-top:8px;">
-        <button class="btn info" style="width:100%;" onclick="openPastHistory()">📂 過去の履歴</button>
-    </div>
-    <div style="margin-top:8px;">
-        <button class="btn drive" style="width:100%;" onclick="openPhotoFolder()">📷 保存された写真を見る</button>
-    </div>
-
-    <div id="newsArea" class="news-box">
-        <div class="news-title">📢 お知らせ</div>
-        <div id="newsText" class="news-content"></div>
+  <div class="card">
+    <h2 class="section-title">メニュー</h2>
+    <div class="menu-list">
+        <button class="menu-item" onclick="showHistory()"><span class="menu-icon gray">🕘</span>履歴<span class="menu-chev">›</span></button>
+        <button class="menu-item" onclick="openDashboard()"><span class="menu-icon red">📮</span>未送信<span class="menu-chev">›</span></button>
+        <button class="menu-item" onclick="openPastHistory()"><span class="menu-icon cyan">📂</span>過去の履歴<span class="menu-chev">›</span></button>
+        <button class="menu-item" onclick="openPhotoFolder()"><span class="menu-icon purple">📷</span>保存された写真を見る<span class="menu-chev">›</span></button>
     </div>
   </div>
 </div>
 
 <div id="view-camera" class="view-section">
-    <div class="card" style="text-align:center;">
-        <h3>① トップユニット装着済の遊技台を撮影</h3>
+    <div class="card center">
+        <h3 class="step-title"><span class="step-num">1</span>トップユニット装着済の遊技台を撮影</h3>
 
         <div id="previewList">
             <span style="width:100%; text-align:center; color:#999; font-size:12px; line-height:60px;">写真はまだありません</span>
@@ -121,30 +228,28 @@
         <video id="cameraVideo" autoplay playsinline muted></video>
         <canvas id="cameraCanvas"></canvas>
 
-        <div style="margin-top:10px;">
-            <button id="btnShutter" class="btn" onclick="takePhoto()">📷 撮影する</button>
-
-            <button id="btnNext" class="btn ok" style="display:none;" onclick="goToScan()">写真を送る（QRへ）</button>
-
-            <button id="btnSkip" class="btn sub" style="background:#17a2b8;" onclick="skipPhoto()">写真なしでQRへ</button>
+        <div class="actions">
+            <button id="btnShutter" class="btn lg" onclick="takePhoto()">📷 撮影する</button>
+            <button id="btnNext" class="btn ok lg" style="display:none;" onclick="goToScan()">写真を送る（QRへ）</button>
+            <button id="btnSkip" class="btn skip" onclick="skipPhoto()">写真なしでQRへ</button>
         </div>
 
-        <div style="margin-top:10px;">
-             <button id="btnResetPhotos" class="btn sub" style="display:none; font-size:12px;" onclick="resetPhotos()">🗑️ 全て撮り直す</button>
+        <div>
+             <button id="btnResetPhotos" class="btn danger-ghost" style="display:none;" onclick="resetPhotos()">🗑️ 全て撮り直す</button>
         </div>
 
-        <div style="margin-top:15px; border-top:1px solid #eee; padding-top:10px;">
-            <button class="btn sub" style="background:#999;" onclick="resetToTop()">中止して戻る</button>
+        <div class="footer-actions">
+            <button class="btn ghost" onclick="resetToTop()">中止して戻る</button>
         </div>
     </div>
 </div>
 
 <div id="view-scan" class="view-section">
-  <div class="card">
-    <h3>② QRをスキャン</h3>
+  <div class="card center">
+    <h3 class="step-title"><span class="step-num">2</span>QRをスキャン</h3>
     <div class="cam-tools">
       <button id="scanTorch" class="btn sub" style="display:none" onclick="toggleTorch()">🔦 ライト ON</button>
-      <button class="btn sub" onclick="manualEntry()">手入力</button>
+      <button class="btn sub" onclick="manualEntry()">⌨️ 手入力</button>
       <label id="scanZoomWrap" class="zoom-wrap">🔍 <input type="range" id="scanZoom" oninput="setZoom(this.value)"></label>
       <div id="scanTorchNote" class="torch-note">※この端末・ブラウザではアプリからライトを操作できません</div>
     </div>
@@ -156,19 +261,21 @@
     <canvas id="scanCanvas" style="display:none"></canvas>
     <div id="status">QRコードをかざしてください…</div>
     <div id="serial"></div>
-    <div style="margin-top:10px; text-align:center;">
-      <button class="btn sub" style="background:#999;" onclick="resetToTop()">中止して戻る</button>
+    <div class="footer-actions">
+      <button class="btn ghost" onclick="resetToTop()">中止して戻る</button>
     </div>
   </div>
 </div>
 
 <div id="view-sending" class="view-section">
-    <div class="card" style="text-align:center; padding:40px;">
+    <div class="card center sending-card">
+        <div class="spinner"></div>
         <h2 id="msgSending">処理中...</h2>
         <p id="msgDetail">準備中...</p>
-        <div style="font-size:30px;">⏳</div>
     </div>
 </div>
+
+</div><!-- /.container -->
 
 <script>
 /** ====== 設定 ====== */
@@ -685,3 +792,4 @@ function parseSerial(t){
 </script>
 </body>
 </html>
+
